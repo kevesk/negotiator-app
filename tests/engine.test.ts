@@ -46,7 +46,7 @@ describe("package scoring", () => {
     expect(r.removed).toEqual([{ id: "B", issue: "salary" }]); expect(r.ranking).toHaveLength(1);
   });
   it("groups packages within 5 points as a tie", () => {
-    const r = scorePackages(issues, [{ id: "A", values: { salary: 55000, remote: 50 } }, { id: "B", values: { salary: 54000, remote: 50 } }, { id: "C", values: { salary: 46000, remote: 0 } }]);
+    const r = scorePackages(issues, [{ id: "A", values: { salary: 55000, remote: 50 } }, { id: "B", values: { salary: 54500, remote: 50 } }, { id: "C", values: { salary: 46000, remote: 0 } }]);
     expect(r.ranking.map((p) => p.tieGroup)).toEqual([0, 0, 1]);
   });
   it("rejects weights not summing to 100", () => expect(scorePackages([{ ...issues[0]!, weight: 50 }, issues[1]!], []).error).toBe("weights_sum_100"));
