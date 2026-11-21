@@ -62,7 +62,7 @@ export async function runTurn(deps: TurnDeps, prev: SessionState, message: strin
     const r = runNumbersTool(s); if (!("needs" in r)) s.outputs.numbers = r;
   } else if (tool === "offer_analyzer" && !deps.tools?.offer_analyzer) {
     const r = runOfferTool(s, deps.today);
-    if (!("needs" in r)) { s.outputs.offer_analysis = r; setSlot(s, "total_comp_offer", { cash_subtotal: r.cash_subtotal, parts: r.parts.length }, "computed"); }
+    if (!("needs" in r)) { s.outputs.offer_analysis = r; setSlot(s, "total_comp_offer", { cash_subtotal: r.cash_subtotal, parts: r.parts.length }, "computed"); if (r.offers_comparison) setSlot(s, "offer_comparison", { columns: r.offers_comparison.columns }, "computed"); }
   } else if (tool) {
     const run = deps.tools?.[tool]; const key = tool === "script_writer" ? "scripts" : tool === "offer_analyzer" ? "offer_analysis" : "evidence_summary";
     s.outputs[key] = run ? await run(s).catch(() => ({ failed: true })) : { notBuilt: true };
@@ -85,7 +85,7 @@ export async function runTurn(deps: TurnDeps, prev: SessionState, message: strin
     confirm.length ? `\nThe user pasted a session summary. Briefly confirm these time-sensitive items before relying on them: ${confirm.join(", ")}.` : "",
     "", "What you know so far:", stateSummary(s),
     Object.keys(s.outputs).length ? `\nTool results (the only source for computed figures):\n${JSON.stringify(s.outputs)}` : "",
-    s.outputs.offer_analysis ? "\nOffer analysis is ready (tool results, offer_analysis). Present it as a table of parts beside base pay and never as one total value: cash subtotal, then pension, vacation, benefits, equity and terms, each with its tag and whether it is an estimate. Say plainly which parts are unknown and what to ask the employer, name the red flags in plain words, and if a comparison with the current job exists, propose the stronger alternative as the fallback option (BATNA) and ask the user to confirm before it is used." : "",
+    s.outputs.offer_analysis ? "\nOffer analysis is ready (tool results, offer_analysis). Present it as a table of parts beside base pay and never as one total value: cash subtotal, then pension, vacation, benefits, equity and terms, each with its tag and whether it is an estimate. Say plainly which parts are unknown and what to ask the employer, name the red flags in plain words, and if offers_comparison exists, show that side-by-side table (one column per offer, the current job as a cash-only column) and note which has the highest guaranteed cash as a proposal only; if a comparison with the current job exists, propose the stronger alternative as the fallback option (BATNA) and ask the user to confirm before it is used." : "",
     s.outputs.market_range && (s.outputs.market_range as { unavailable?: boolean }).unavailable ? "\nNo market data could be found. Say so plainly and ask the user for their own evidence (job ads with pay ranges, union statistics, colleagues' experience)." : "",
     r.items.length ? `\nNotes you may use:\n${renderForPrompt(r.items)}` : "\nNo relevant notes were found: if you answer without backing, label it as a guess (rule 6).",
   ].filter((x) => x !== "").join("\n");

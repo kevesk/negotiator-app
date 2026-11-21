@@ -33,10 +33,21 @@ export interface OfferAnalysis {
   open_questions: string[];
   comparison?: { part: string; offer: string; current: string }[];
   batna_candidate?: { which: "offer" | "current"; reason: string; needs_user_confirmation: true };
+  /** Guaranteed cash of the current job, when given (yearly, 12 months assumed). */
+  current_cash?: { base_annual: number; guaranteed_variable: number; annual: number };
+  /** Set when other real offers were given: all offers (and the current job) side by side. */
+  offers_comparison?: OffersComparison;
   assumptions: string[];
   boundaries: string;
 }
 
+export interface OffersComparison {
+  columns: string[];
+  rows: { part: string; values: string[] }[];
+  /** The alternative with the highest guaranteed cash. Proposed only; the user confirms and decides how much the non-cash parts matter. */
+  strongest_cash: { label: string; annual: number; reason: string; needs_user_confirmation: true };
+  skipped: string[];
+}
 const isNum = (x: unknown): x is number => typeof x === "number" && Number.isFinite(x);
 const asObj = (x: unknown): Record<string, unknown> => (x && typeof x === "object" && !Array.isArray(x) ? (x as Record<string, unknown>) : {});
 const text = (x: unknown): string => (typeof x === "string" ? x : x === undefined || x === null ? "" : JSON.stringify(x));
@@ -149,7 +160,7 @@ export function analyzeOffer(inp: OfferInput, o: { today?: string } = {}): Offer
   parts.push({ part: "employer_cost", facts: `Estimated monthly cost to the employer for base${guaranteed ? " and guaranteed variable pay" : ""}: salary ${fmt(monthly + guaranteed / paidMonths)} + social contributions ${fmt(ec.contributions)}${pensionRate !== undefined ? ` + pension ${fmt(ec.pension)}` : ""} (special payroll tax on pension not included)`, estimate_sek: ec.total * 12, period: "year", tag: "computed", estimate: true, unknown: false });
 
   // comparison with the current package (cash only; stronger alternative is proposed, the user confirms)
-  let comparison: OfferAnalysis["comparison"]; let batna: OfferAnalysis["batna_candidate"];
+  let comparison: OfferAnalysis["comparison"]; let batna: OfferAnalysis["batna_candidate"]; let current_cash: OfferAnalysis["current_cash"];
   const cur = inp.current;
   if (cur && isNum(cur.base)) {
     const cv = asObj(cur.variable); const curVar = isNum(cur.variable) ? cur.variable : isNum(cv.guaranteed_yearly) ? cv.guaranteed_yearly : 0;
@@ -160,6 +171,7 @@ export function analyzeOffer(inp: OfferInput, o: { today?: string } = {}): Offer
       { part: "cash subtotal", offer: `${fmt(cashAnnual)} SEK`, current: `${fmt(curCash)} SEK` },
       { part: "pension / benefits / vacation", offer: "see parts", current: cur.package ? text(cur.package) : "unknown, ask" },
     ];
+    current_cash = { base_annual: cur.base * 12, guaranteed_variable: curVar, annual: curCash };
     assumptions.push("current package compared on cash only; non-cash parts are for the user to weigh");
     const better = cashAnnual >= curCash ? "offer" : "current";
     batna = { which: better, reason: `${better === "offer" ? "The offer" : "The current job"} has the higher guaranteed cash (${fmt(Math.max(cashAnnual, curCash))} against ${fmt(Math.min(cashAnnual, curCash))} SEK a year); the user decides, since non-cash parts are not compared`, needs_user_confirmation: true };
@@ -167,8 +179,29 @@ export function analyzeOffer(inp: OfferInput, o: { today?: string } = {}): Offer
 
   return {
     parts, cash_subtotal: { annual: cashAnnual, basis: guaranteed ? "base pay plus guaranteed variable pay" : "base pay", tag: "computed", monthly_base: monthly, paid_months: paidMonths },
-    variable_outcomes: outcomes, terms, flags: dedupe(flags), open_questions: open, comparison, batna_candidate: batna, assumptions,
+    variable_outcomes: outcomes, terms, flags: dedupe(flags), open_questions: open, comparison, batna_candidate: batna, current_cash, assumptions,
     boundaries: "Preparation support, not legal or financial advice. Estimates only; verify with the agreement and the employer.",
   };
 }
 const dedupe = (f: OfferAnalysis["flags"]) => f.filter((x, i) => f.findIndex((y) => y.id === x.id) === i);
+
+const partText = (a: OfferAnalysis, n: string): string => { const p = a.parts.find((x) => x.part === n); if (!p) return "not stated"; if (p.unknown) return "unknown, ask"; return p.estimate_sek !== undefined ? `${fmt(p.estimate_sek)} SEK a year${p.estimate ? " (estimate)" : ""}` : p.facts; };
+/** Side-by-side table for two or more offers, with the current job as a cash-only column. Parts stay separate; there is no total (D69). */
+export function compareOffers(entries: { label: string; analysis: OfferAnalysis }[], skipped: string[] = []): OffersComparison {
+  const cur = entries[0]?.analysis.current_cash;
+  const columns = [...entries.map((e) => e.label), ...(cur ? ["Current job"] : [])];
+  const row = (part: string, f: (a: OfferAnalysis) => string, curVal?: string) => ({ part, values: [...entries.map((e) => f(e.analysis)), ...(cur ? [curVal ?? "unknown, ask"] : [])] });
+  const rows = [
+    row("Base pay (yearly)", (a) => `${fmt(a.cash_subtotal.monthly_base * a.cash_subtotal.paid_months)} SEK`, cur ? `${fmt(cur.base_annual)} SEK` : undefined),
+    row("Guaranteed variable pay", (a) => { const g = a.cash_subtotal.annual - a.cash_subtotal.monthly_base * a.cash_subtotal.paid_months; return `${fmt(g)} SEK`; }, cur ? `${fmt(cur.guaranteed_variable)} SEK` : undefined),
+    row("Cash subtotal", (a) => `${fmt(a.cash_subtotal.annual)} SEK`, cur ? `${fmt(cur.annual)} SEK` : undefined),
+    row("Variable pay range", (a) => (a.variable_outcomes ? `${fmt(a.variable_outcomes.low)} to ${fmt(a.variable_outcomes.high)} SEK` : "none stated")),
+    row("Pension", (a) => partText(a, "pension")), row("Vacation", (a) => partText(a, "vacation")),
+    row("Benefits", (a) => partText(a, "benefits")), row("Equity", (a) => (a.parts.some((p) => p.part === "equity") ? "stated, valued at zero" : "none stated")),
+    row("Probation", (a) => a.terms.probation), row("Notice period", (a) => a.terms.notice), row("Non-compete", (a) => a.terms.non_compete),
+    row("Red flags", (a) => (a.flags.length ? a.flags.map((f) => f.id).join(", ") : "none")),
+  ];
+  const all = [...entries.map((e) => ({ label: e.label, annual: e.analysis.cash_subtotal.annual })), ...(cur ? [{ label: "Current job", annual: cur.annual }] : [])];
+  const best = all.reduce((m, x) => (x.annual > m.annual ? x : m));
+  return { columns, rows, skipped, strongest_cash: { label: best.label, annual: best.annual, reason: `${best.label} has the highest guaranteed cash (${fmt(best.annual)} SEK a year). The non-cash parts are not compared; the user decides how much they matter`, needs_user_confirmation: true } };
+}

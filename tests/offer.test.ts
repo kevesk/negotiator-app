@@ -56,3 +56,18 @@ describe("offer analyzer in the turn loop", () => {
     expect(r.usedFallback).toBe(false); expect(r.state.outputs.offer_analysis).toBeTruthy(); expect(seen).toContain("Offer analysis is ready"); expect(r.state.slots.total_comp_offer?.source).toBe("computed");
   });
 });
+
+describe("two offers side by side", () => {
+  const withOthers = () => { const s = newState("en"); const set = (k: string, v: unknown, u?: string) => setSlot(s, k, v, "user", { unit: u });
+    set("offer_base", 50000); set("offer_pension", { agreement: "ITP1" }); set("offer_vacation", 25); set("current_base", 45000);
+    set("other_offers", [{ employer: "Beta AB", status: "offer", package: { base: 54000, variable: { guaranteed_yearly: 20000, max_yearly: 60000, description: "bonus" }, pension: { agreement: "SAF-LO" }, vacation: 30, notice_probation: { probation_months: 6, notice_months: 3, non_compete: "12 months" } } }, { employer: "Gamma", status: "process" }]); return s; };
+  it("builds one table with a column per offer and the current job, with no total", () => {
+    const a = ok(runOfferTool(withOthers())); const c = a.offers_comparison!;
+    expect(c.columns).toEqual(["Offer 1", "Beta AB", "Current job"]); expect(c.skipped).toEqual(["Gamma"]);
+    const cash = c.rows.find((r) => r.part === "Cash subtotal")!; expect(cash.values).toEqual(["600 000 SEK", "668 000 SEK", "540 000 SEK"]);
+    expect(c.rows.find((r) => r.part === "Vacation")!.values[1]).toContain("SEK");
+    expect(c.rows.find((r) => r.part === "Red flags")!.values[1]).toContain("probation_long"); expect(JSON.stringify(c).toLowerCase()).not.toContain("total value");
+  });
+  it("proposes the strongest cash alternative but never decides", () => { const c = ok(runOfferTool(withOthers())).offers_comparison!; expect(c.strongest_cash).toMatchObject({ label: "Beta AB", annual: 668000, needs_user_confirmation: true }); expect(c.strongest_cash.reason).toContain("user decides"); });
+  it("without other offers there is no comparison table", () => { const s = withOthers(); setSlot(s, "other_offers", [], "user"); expect(ok(runOfferTool(s)).offers_comparison).toBeUndefined(); });
+});

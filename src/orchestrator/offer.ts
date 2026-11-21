@@ -1,4 +1,4 @@
-import { analyzeOffer, normalise, type OfferAnalysis, type OfferInput } from "@/engine";
+import { analyzeOffer, compareOffers, normalise, type OfferAnalysis, type OfferInput } from "@/engine";
 import { slotValue, type SessionState } from "./state";
 
 const isNum = (x: unknown): x is number => typeof x === "number" && Number.isFinite(x);
@@ -25,5 +25,26 @@ export function offerInputFrom(s: SessionState): OfferInput {
     payStatedVaguely: typeof pay === "string" && /competitive|konkurrens/i.test(pay),
   };
 }
-/** Runs the offer analyzer on the session. `total_comp_offer` is the table of parts plus a cash subtotal, never one mixed value (D69). */
-export function runOfferTool(s: SessionState, today?: string): OfferAnalysis | { needs: string[] } { return analyzeOffer(offerInputFrom(s), { today }); }
+/** Other real offers from the `other_offers` slot: items with a stated base are analysed; processes without numbers are listed as skipped. */
+export function otherOffersFrom(s: SessionState): { offers: { label: string; input: OfferInput }[]; skipped: string[] } {
+  const raw = slotValue<unknown>(s, "other_offers"); const list = Array.isArray(raw) ? raw : raw && typeof raw === "object" ? [raw] : [];
+  const offers: { label: string; input: OfferInput }[] = []; const skipped: string[] = [];
+  list.forEach((it, i) => {
+    const o = (it && typeof it === "object" ? it : {}) as Record<string, any>; const pkg = (o.package && typeof o.package === "object" ? o.package : o) as Record<string, any>;
+    const label = typeof o.employer === "string" && o.employer ? o.employer : `Offer ${i + 2}`;
+    const b = pkg.base;
+    if (isNum(b) || (b && typeof b === "object" && isNum(b.amount))) offers.push({ label, input: { base: isNum(b) ? { amount: b, period: /year|år|annual/i.test(String(pkg.unit ?? pkg.period ?? "")) ? "year" : "month" } : b, weeklyHours: offerInputFrom(s).weeklyHours, variable: pkg.variable, pension: pkg.pension, vacation: pkg.vacation, benefits: pkg.benefits, equity: pkg.equity, notice_probation: pkg.notice_probation } });
+    else skipped.push(label);
+  });
+  return { offers, skipped };
+}
+/** Runs the offer analyzer on the session. `total_comp_offer` is the table of parts plus a cash subtotal, never one mixed value (D69). With other real offers, a side-by-side comparison is added. */
+export function runOfferTool(s: SessionState, today?: string): OfferAnalysis | { needs: string[] } {
+  const first = analyzeOffer(offerInputFrom(s), { today }); if ("needs" in first) return first;
+  const { offers, skipped } = otherOffersFrom(s);
+  if (offers.length) {
+    const others = offers.map((o) => ({ label: o.label, analysis: analyzeOffer(o.input, { today }) })).filter((x): x is { label: string; analysis: OfferAnalysis } => !("needs" in x.analysis));
+    if (others.length) first.offers_comparison = compareOffers([{ label: "Offer 1", analysis: first }, ...others], skipped);
+  }
+  return first;
+}
