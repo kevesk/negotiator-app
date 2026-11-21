@@ -13,6 +13,7 @@ export function extractionPrompt(missing: string[]): string {
     "Read the user's latest message and extract facts into slots. Output ONLY one JSON object, no prose:",
     '{"slots": {"<slot_id>": {"value": <value>, "unit": "<optional unit>"}}, "modifiers": ["<modifier>"]}',
     "Rules: use only ids from the allowed list; include a slot only if the user clearly stated it; never guess; money is SEK, monthly gross unless the user says otherwise (keep their unit in `unit`); dates are ISO; booleans for yes/no.",
+    "Offer slots use these shapes. offer_base: a number (monthly gross; set unit to year or hour if they said so) or {\"amount\":n,\"period\":\"month|year|hour\",\"paid_months\":12|13}. offer_variable: {\"guaranteed_yearly\":n,\"min_yearly\":n,\"max_yearly\":n,\"description\":\"how it works\"} or \"none\". offer_pension: {\"agreement\":\"ITP1|ITP2|SAF-LO|KAP-KL|AKAP-KR|PA16\"} or {\"rate_pct\":n} or {\"monthly\":n}, or \"none\" or \"unknown\". offer_vacation: a number of days. offer_benefits: a list of short strings or \"none\". offer_equity: short text, or \"none\". offer_notice_probation: {\"probation_months\":n,\"notice_months\":n,\"non_compete\":\"text\"}. Never fill a field the user did not state.",
     `Slots still needed (prefer these): ${missing.join(", ") || "none"}.`,
     `Allowed ids: ${[...ALLOWED].join(", ")}.`,
     `Allowed modifiers: ${MODIFIERS.join(", ")}.`,
