@@ -14,9 +14,11 @@
     "build-tax-data": "node scripts/build-tax-data.mjs",
     "build-prompt": "node scripts/build-prompt.mjs",
     "build-flow": "node scripts/build-flow.mjs",
-    "build-all": "node scripts/build-index.mjs \"$VAULT\" && node scripts/build-prompt.mjs \"$VAULT\" && node scripts/build-flow.mjs \"$VAULT\" && node scripts/build-researcher.mjs \"$VAULT\" && node scripts/build-templates.mjs \"$VAULT\"",
+    "build-all": "node scripts/build-index.mjs \"$VAULT\" && node scripts/build-prompt.mjs \"$VAULT\" && node scripts/build-flow.mjs \"$VAULT\" && node scripts/build-researcher.mjs \"$VAULT\" && node scripts/build-templates.mjs \"$VAULT\" && node scripts/build-evals.mjs \"$VAULT\"",
     "build-researcher": "node scripts/build-researcher.mjs",
-    "build-templates": "node scripts/build-templates.mjs"
+    "build-templates": "node scripts/build-templates.mjs",
+    "build-evals": "node scripts/build-evals.mjs",
+    "evals": "vitest run --config vitest.evals.config.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.12.0",
