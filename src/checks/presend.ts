@@ -1,4 +1,4 @@
-import { extractFigures, allowedValues } from "./numbers";
+import { extractFigures, allowedValues, parseNumber } from "./numbers";
 import { findCiteNeverLeaks } from "@/retrieval";
 import type { Stage } from "@/retrieval";
 
@@ -11,15 +11,20 @@ export interface ReplyContext {
   allowedNumbers?: number[];
   /** True once the slots for target, anchor and walk-away exist or were explicitly assumed (rule 7). */
   numbersGateOpen: boolean;
+  /** Figures the user stated themselves: echoing them is allowed before the gate opens. */
+  userNumbers?: number[];
 }
 export interface PreSendResult { ok: boolean; findings: Finding[] }
 
-const GATE_WORDS = /(target|anchor|walk[- ]?away|reservation|landing|mållön|ankare|ankarsiffra|golv|lägsta acceptabla)[^.\n?]{0,50}?\d[\d  .,]{3,}/i;
+const GATE_WORDS = /(target|anchor|walk[- ]?away|reservation|landing|mållön|ankare|ankarsiffra|golv|lägsta acceptabla)[^.\n?]{0,50}?\d[\d  .,]{3,}/gi;
 const PROMISE = /\b(i guarantee|guaranteed|i promise|they (will|'ll) (definitely |certainly )?(accept|agree|say yes)|i know (their|the employer'?s|the company'?s) budget|their budget is|jag garanterar|jag lovar|de kommer (säkert |definitivt )?(att )?(acceptera|säga ja)|jag vet (deras|arbetsgivarens|företagets) budget|deras budget är)\b/i;
 const ID_REQUEST = /\b(share|provide|send|enter|give me|what is your|what's your|ange|skicka|dela|ge mig|vad är ditt|vad är din)\b[^.\n?]{0,60}\b(personnummer|personal (identity|id) number|social security( number)?|bank account|kontonummer|bankkonto|iban|card number|kortnummer)\b/i;
 const AUTHOR_COURSE = /\b(ntu|nanyang|(the|this|our|my) course|negotiation course|my (professor|lecturer|teacher|classmates?)|in class|class (exercise|case|results?)|slides?|lectures?|the author|who (built|wrote|created) (me|this)|my creator|kursen|kursmaterialet|föreläsningen|författaren|min (professor|lärare|kursare))\b/i;
 const UNPROFESSIONAL = /\b(haha+|hehe+|lol|lmao|rofl|just kidding)\b|\p{Extended_Pictographic}/iu;
 const ANECDOTE = /\b(i once|i remember (when|a)|in my experience|when i (was|worked|negotiated)|my own (experience|negotiation)|a friend of mine|jag minns|enligt min erfarenhet|när jag (var|jobbade|förhandlade)|en gång när jag|en vän till mig)\b/i;
+
+/** Every number in a text, including small ones (used for gate matches). */
+const parseAll = (t: string) => [...t.matchAll(/\d[\d\u00a0 .,]*\d|\d/g)].flatMap((m) => { const v = parseNumber(m[0]); return v === null ? [] : [{ value: v, kind: "plain" as const, raw: m[0] }]; });
 
 /** Removes quoted script lines and code so example sentences are not mistaken for the coach's own questions or claims. */
 const stripQuotes = (t: string) => t.replace(/```[\s\S]*?```/g, " ").replace(/"[^"\n]{3,}"|“[^”\n]{3,}”|»[^«\n]{3,}«/g, " ").replace(/^>.*$/gm, " ");
@@ -43,7 +48,11 @@ export function preSend(reply: string, ctx: ReplyContext): PreSendResult {
     const q = (text.match(/\?/g) ?? []).length; if (q > 2) add("H5", "error", `${q} questions in one reply`);
   }
   // H7: no target, anchor or walk-away figures before the gate is open
-  if (!ctx.numbersGateOpen && GATE_WORDS.test(text)) add("H7", "error", "a target, anchor or walk-away figure before the required slots exist");
+  if (!ctx.numbersGateOpen) {
+    const own = new Set(ctx.userNumbers ?? []);
+    const bad = [...text.matchAll(GATE_WORDS)].flatMap((m) => extractFigures(m[0]).concat(parseAll(m[0]))).filter((f) => !own.has(f.value));
+    if (bad.length) add("H7", "error", "a target, anchor or walk-away figure before the required slots exist");
+  }
   // H10: ends with a next step
   const last = text.trim().split(/\n\s*\n/).pop() ?? "";
   if (!/\?|next step|nästa steg|you can|du kan|want me to|vill du att jag|try |prova |today|idag|let me know|säg till/i.test(last)) add("H10", "flag", "reply may not end with a next step");
