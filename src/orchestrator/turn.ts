@@ -30,6 +30,8 @@ export interface TurnResult {
   reply: string; state: SessionState; plan: WorkPlan; sidebar: string;
   /** What the user should do next (code-owned) and exactly three tap-to-send answers. */
   next: string; suggestions: string[];
+  /** True when this reply is the first final brief (the app then shows copy, PDF and the usefulness question). */
+  isBrief: boolean;
   findings: Finding[]; usedFallback: boolean; retrieved: Retrieved[];
 }
 
@@ -94,7 +96,7 @@ export async function runTurn(deps: TurnDeps, prev: SessionState, message: strin
     Object.keys(s.outputs).length ? `\nTool results (the only source for computed figures):\n${JSON.stringify(s.outputs)}` : "",
     s.outputs.offer_analysis ? "\nOffer analysis is ready (tool results, offer_analysis). Present it as a table of parts beside base pay and never as one total value: cash subtotal, then pension, vacation, benefits, equity and terms, each with its tag and whether it is an estimate. Say plainly which parts are unknown and what to ask the employer, name the red flags in plain words, and if offers_comparison exists, show that side-by-side table (one column per offer, the current job as a cash-only column) and note which has the highest guaranteed cash as a proposal only; if a comparison with the current job exists, propose the stronger alternative as the fallback option (BATNA) and ask the user to confirm before it is used." : "",
     s.outputs.scripts && plan.stage === "scripts" ? "\nScripts are in the tool results (scripts). Present them for the user's channel and language, formatted like this script block, each with its goal, the text, the tone and what to say if they reply with the likely objection:\n" + SCRIPT_FORMAT + "\nIf provisional is true, list the assumptions. The user edits and sends them; never say anything was sent. If scripts.failed is true, say plainly that the wording could not be made safely and offer to try again. Use only the figures in the scripts." : "",
-    plan.stage === "brief" ? "\nWrite the final prep brief now, in the user's language, using exactly this template. Fill every field from the facts and tool results; write unknown where a fact is missing; no placeholder may remain; keep the headings and their numbers; one to two pages; put the scripts from the tool results into section 5; end with the checklist, the assumptions, the line of concepts used and the preparation-support line.\n\n" + PREP_BRIEF_TEMPLATE + "\n\nPath additions: " + PREP_BRIEF_ADDITIONS : "",
+    plan.stage === "brief" ? "\nWrite the final prep brief now, in the user's language, using exactly this template. Fill every field from the facts and tool results; write unknown where a fact is missing; no placeholder may remain; keep the headings and their numbers; 500 to 800 words in total, concise and straight to the point, short sentences, no fluff, no filler, no repetition between sections; put the scripts from the tool results into section 5; end with the checklist, the assumptions, the line of concepts used and the preparation-support line.\n\n" + PREP_BRIEF_TEMPLATE + "\n\nPath additions: " + PREP_BRIEF_ADDITIONS : "",
     s.outputs.market_range && (s.outputs.market_range as { unavailable?: boolean }).unavailable ? "\nNo market data could be found. Say so plainly and ask the user for their own evidence (job ads with pay ranges, union statistics, colleagues' experience)." : "",
     r.items.length ? `\nNotes you may use:\n${renderForPrompt(r.items)}` : "\nNo relevant notes were found: if you answer without backing, label it as a guess (rule 6).",
   ].filter((x) => x !== "").join("\n");
@@ -141,5 +143,5 @@ export async function runTurn(deps: TurnDeps, prev: SessionState, message: strin
 
   // 8. record the exchange
   s.messages.push({ role: "user", content: message }, { role: "assistant", content: draft });
-  return { reply: draft, state: s, plan, sidebar: sidebarStep(plan.stage), next, suggestions, findings: check.findings, usedFallback, retrieved: r.items };
+  return { reply: draft, state: s, plan, sidebar: sidebarStep(plan.stage), next, suggestions, isBrief: plan.stage === "brief" && !usedFallback && !prev.outputs.brief, findings: check.findings, usedFallback, retrieved: r.items };
 }

@@ -47,7 +47,7 @@ export function Markdown({ text }: { text: string }) {
     <div className="md">
       {blocks(text).map((b, i) =>
         b.t === "p" ? <p key={i}>{b.lines.map((l, j) => <span key={j}>{j > 0 && <br />}{inline(l, `${i}-${j}-`)}</span>)}</p>
-        : b.t === "ul" ? <ul key={i}>{b.lines.map((l, j) => <li key={j}>{inline(l, `${i}-${j}-`)}</li>)}</ul>
+        : b.t === "ul" ? <ul key={i}>{b.lines.map((l, j) => <li key={j}>{inline(l.replace(/^\[ \]\s*/, "☐ ").replace(/^\[[xX]\]\s*/, "☑ "), `${i}-${j}-`)}</li>)}</ul>
         : b.t === "ol" ? <ol key={i}>{b.lines.map((l, j) => <li key={j}>{inline(l, `${i}-${j}-`)}</li>)}</ol>
         : <div className="tablewrap" key={i}><table><tbody>{b.rows.map((r, j) => <tr key={j}>{r.map((c, k) => (j === 0 ? <th key={k}>{inline(c, `${i}-${j}-${k}-`)}</th> : <td key={k}>{inline(c, `${i}-${j}-${k}-`)}</td>))}</tr>)}</tbody></table></div>)}
     </div>

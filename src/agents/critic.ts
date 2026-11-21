@@ -14,13 +14,13 @@ export interface BriefContext {
   /** Texts the brief's figures may come from (slots, tool outputs). */
   sources: string[];
 }
-export const MAX_WORDS = 1100;
+export const MAX_WORDS = 800;
 const IDS: CheckId[] = ["placeholder", "numbers", "tags", "market", "sources", "guesses", "consistency", "recommendation", "leaks", "honesty", "completeness", "length"];
 
 /** Plain-language labels for the user, one per check. Owned by code so no model text is shown as a finding. */
 export const FINDING_LABEL: Record<"en" | "sv", Record<CheckId, string>> = {
-  en: { placeholder: "a field in the brief was left empty", numbers: "a figure could not be matched to your data or the tools", tags: "a figure is missing its source tag", market: "the market data is incomplete or overstated", sources: "a source or date is missing", guesses: "a guess may be shown as a fact", consistency: "your numbers or scripts do not fully agree", recommendation: "a recommendation check was not met", leaks: "something private or off-limits appears in the text", honesty: "a line may say something you could not truthfully say", completeness: "a required part is missing", length: "the brief is longer than two pages" },
-  sv: { placeholder: "ett fält i underlaget lämnades tomt", numbers: "en siffra kunde inte kopplas till dina uppgifter eller verktygen", tags: "en siffra saknar källtagg", market: "marknadsdatan är ofullständig eller överdriven", sources: "en källa eller ett datum saknas", guesses: "en gissning kan visas som fakta", consistency: "dina siffror eller manus stämmer inte helt överens", recommendation: "en rekommendationskontroll är inte uppfylld", leaks: "något privat eller förbjudet finns i texten", honesty: "en rad kan säga något du inte sanningsenligt kan säga", completeness: "en obligatorisk del saknas", length: "underlaget är längre än två sidor" },
+  en: { placeholder: "a field in the brief was left empty", numbers: "a figure could not be matched to your data or the tools", tags: "a figure is missing its source tag", market: "the market data is incomplete or overstated", sources: "a source or date is missing", guesses: "a guess may be shown as a fact", consistency: "your numbers or scripts do not fully agree", recommendation: "a recommendation check was not met", leaks: "something private or off-limits appears in the text", honesty: "a line may say something you could not truthfully say", completeness: "a required part is missing", length: "the brief is longer than 800 words" },
+  sv: { placeholder: "ett fält i underlaget lämnades tomt", numbers: "en siffra kunde inte kopplas till dina uppgifter eller verktygen", tags: "en siffra saknar källtagg", market: "marknadsdatan är ofullständig eller överdriven", sources: "en källa eller ett datum saknas", guesses: "en gissning kan visas som fakta", consistency: "dina siffror eller manus stämmer inte helt överens", recommendation: "en rekommendationskontroll är inte uppfylld", leaks: "något privat eller förbjudet finns i texten", honesty: "en rad kan säga något du inte sanningsenligt kan säga", completeness: "en obligatorisk del saknas", length: "underlaget är längre än 800 ord" },
 };
 
 /** Sections of the brief by their numbers ("## 5. ..."), language-independent. */
@@ -53,7 +53,7 @@ export function codeChecks(c: BriefContext): CriticFinding[] {
   if (!/legal or financial advice|juridisk|finansiell rådgivning|rådgivning/i.test(c.brief)) add("completeness", "should_fix", "end", "the preparation-support line is missing", "End with the line that this is preparation support, not legal or financial advice.");
   if (!/- \[ \]|next step|nästa steg/i.test(c.brief)) add("completeness", "should_fix", "end", "no next step", "Add the checklist and a clear next step.");
   const words = c.brief.split(/\s+/).filter(Boolean).length;
-  if (words > MAX_WORDS) add("length", "should_fix", "brief", `${words} words`, "Cut to one to two pages.");
+  if (words > MAX_WORDS) add("length", "should_fix", "brief", `${words} words`, "Cut to 500 to 800 words: only what the user needs, no fluff.");
   return out;
 }
 

@@ -41,3 +41,4 @@ describe("turn and endpoint", () => {
     expect(b.suggestions).toHaveLength(3); expect(b.next).toBeTruthy(); expect(b.reply).not.toContain("<");
   });
 });
+describe("checklists", () => { it("shows task-list items as checkboxes", () => { const h = html("- [ ] Print this\n- [x] Done"); expect(h).toContain("☐ Print this"); expect(h).toContain("☑ Done"); }); });

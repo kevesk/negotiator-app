@@ -5,7 +5,7 @@ import { newState, type SessionState } from "@/orchestrator/state";
 import { toSummary } from "@/orchestrator/summary";
 import { Markdown } from "./markdown";
 
-interface Msg { role: "user" | "assistant"; content: string; error?: boolean }
+interface Msg { role: "user" | "assistant"; content: string; error?: boolean; brief?: boolean }
 
 export default function Home() {
   const [lang, setLang] = useState<Lang>("en");
@@ -17,6 +17,9 @@ export default function Home() {
   const [step, setStep] = useState(0);
   const [next, setNext] = useState("");
   const [chips, setChips] = useState<string[]>([]);
+  const [copied, setCopied] = useState<number | null>(null);
+  const [rated, setRated] = useState(false);
+  const [printText, setPrintText] = useState<string | null>(null);
   const end = useRef<HTMLDivElement>(null);
   const t = T[lang];
 
@@ -36,9 +39,17 @@ export default function Home() {
       const res = await fetch("/api/chat", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ message, state }) });
       const j = await res.json();
       if (!res.ok) { const e = (T[lang].errors as Record<string, string>)[j.error] ?? t.errors.generic; setLog((l) => [...l, { role: "assistant", content: e, error: true }]); }
-      else { setState(j.state); setStep(STEP_OF[j.stage] ?? 0); setNext(j.next ?? ""); setChips(Array.isArray(j.suggestions) ? j.suggestions.slice(0, 3) : []); setLog((l) => [...l, { role: "assistant", content: j.reply }]); }
+      else { setState(j.state); setStep(STEP_OF[j.stage] ?? 0); setNext(j.next ?? ""); setChips(Array.isArray(j.suggestions) ? j.suggestions.slice(0, 3) : []); setLog((l) => [...l, { role: "assistant", content: j.reply, brief: j.brief === true }]); if (j.brief) setRated(false); }
     } catch { setLog((l) => [...l, { role: "assistant", content: t.errors.generic, error: true }]); }
     finally { setBusy(false); }
+  }
+  async function copy(i: number, text: string) {
+    try { await navigator.clipboard.writeText(text); setCopied(i); setTimeout(() => setCopied((c) => (c === i ? null : c)), 1500); } catch { /* clipboard blocked: the text can still be selected by hand */ }
+  }
+  function pdf(text: string) { setPrintText(text); setTimeout(() => { window.print(); setPrintText(null); }, 100); }
+  async function rate(value: "useful" | "somewhat" | "not_useful") {
+    setRated(true); // anonymous counter only: no message content, no session id
+    try { await fetch("/api/event", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ event: "rating", value }) }); } catch { /* counters never block the user */ }
   }
   function download() {
     if (!state) return;
@@ -63,12 +74,30 @@ export default function Home() {
   );
   return (
     <main className="shell">
+      {printText !== null && <div className="print-only"><Markdown text={printText} /></div>}
       <div className="top"><h1>{t.title}</h1><div className="row">{state && Object.keys(state.slots).length > 0 && <button className="btn" onClick={download}>{t.summary}</button>}<button className="btn" onClick={reset}>{t.newSession}</button></div></div>
       <div className="main">
         <ol className="steps" aria-label="Progress">{t.steps.map((s, i) => <li key={s} data-on={i === step} data-done={i < step}>{s}</li>)}</ol>
         <section className="chat">
           <div className="log" aria-live="polite">
-            {log.map((m, i) => <div key={i} className={`msg ${m.role === "user" ? "user" : ""} ${m.error ? "err" : ""}`}>{m.role === "user" || m.error ? m.content : <Markdown text={m.content} />}</div>)}
+            <div className="notice" role="note">{t.notice} <a href="/privacy" target="_blank" rel="noreferrer">{t.privacy}</a></div>
+            {log.map((m, i) => (
+              <div key={i} className={`msgwrap ${m.role === "user" ? "user" : ""}`}>
+                <div className={`msg ${m.role === "user" ? "user" : ""} ${m.error ? "err" : ""} ${m.brief ? "brief" : ""}`}>
+                  {m.brief && <div className="brieftag">{t.briefReady}</div>}
+                  {m.role === "user" || m.error ? m.content : <Markdown text={m.content} />}
+                </div>
+                {m.role === "assistant" && !m.error && i > 0 && (
+                  <div className="actions">
+                    <button className="link" onClick={() => void copy(i, m.content)}>{copied === i ? t.copied : t.copy}</button>
+                    {m.brief && <button className="link" onClick={() => pdf(m.content)}>{t.savePdf}</button>}
+                    {m.brief && (rated ? <span className="thanks">{t.ratingThanks}</span> : (
+                      <span className="rate">{t.ratingQ} {(["useful", "somewhat", "not_useful"] as const).map((v) => <button key={v} className="link" onClick={() => void rate(v)}>{t.ratings[v]}</button>)}</span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
             {busy && <div className="msg" aria-busy="true">{t.thinking}</div>}
             <div ref={end} />
           </div>

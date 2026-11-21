@@ -1,3 +1,4 @@
+import { recordEvent, parseEvent, logStore, type CounterStore } from "./events";
 import { runTurn, newState, type SessionState, type ChatModel, type Lang, type TurnDeps } from "@/orchestrator";
 
 export const LIMITS = { message: 4000, messages: 80, messageChars: 12000, stateBytes: 300_000 };
@@ -12,7 +13,7 @@ function validState(x: unknown): x is SessionState {
     Array.isArray(s.userTexts) && Array.isArray(s.modifiers) && s.outputs !== null && typeof s.outputs === "object" && Array.isArray(s.notesUsed) && Array.isArray(s.recompute) && Array.isArray(s.failures);
 }
 /** Validates the request and runs one turn. The server keeps nothing: the session state travels with the browser (D79). */
-export async function handleChat(body: ChatRequest, model: ChatModel | null, today?: string, researcher?: TurnDeps["researcher"]): Promise<ChatResponse> {
+export async function handleChat(body: ChatRequest, model: ChatModel | null, today?: string, researcher?: TurnDeps["researcher"], counters: CounterStore = logStore): Promise<ChatResponse> {
   if (!model) return { status: 503, body: { error: "not_configured" } };
   if (typeof body.message !== "string" || !body.message.trim()) return { status: 400, body: { error: "empty_message" } };
   if (body.message.length > LIMITS.message) return { status: 413, body: { error: "message_too_long" } };
@@ -21,8 +22,10 @@ export async function handleChat(body: ChatRequest, model: ChatModel | null, tod
   else { if (JSON.stringify(body.state).length > LIMITS.stateBytes || !validState(body.state)) return { status: 400, body: { error: "bad_state" } }; state = body.state; }
   try {
     const r = await runTurn({ model, researcher, allowDraft: process.env.RELEASE_MODE !== "1", today }, state, body.message);
-    return { status: 200, body: { reply: r.reply, state: r.state, sidebar: r.sidebar, next: r.next, suggestions: r.suggestions, stage: r.plan.stage, usedFallback: r.usedFallback } };
+    if (r.isBrief) recordEvent({ event: "brief_produced" }, counters);
+    return { status: 200, body: { reply: r.reply, state: r.state, sidebar: r.sidebar, next: r.next, suggestions: r.suggestions, stage: r.plan.stage, usedFallback: r.usedFallback, brief: r.isBrief } };
   } catch {
-    return { status: 502, body: { error: "model_error" } }; // no content in the error, nothing logged
+    recordEvent(parseEvent({ event: "error", type: "model_error" }), counters); // a count only, never content
+    return { status: 502, body: { error: "model_error" } };
   }
 }
