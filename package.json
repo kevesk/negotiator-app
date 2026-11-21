@@ -17,6 +17,7 @@
     "build-all": "node scripts/build-index.mjs \"$VAULT\" && node scripts/build-prompt.mjs \"$VAULT\" && node scripts/build-flow.mjs \"$VAULT\""
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^1.12.0",
     "next": "^15.5.29",
     "react": "^19.3.1",
     "react-dom": "^19.3.1"
