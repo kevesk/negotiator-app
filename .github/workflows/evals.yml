@@ -1,0 +1,38 @@
+name: Evals
+# Manual run only: it calls the AI and costs money. Needs the repository secret ANTHROPIC_API_KEY.
+on:
+  workflow_dispatch:
+    inputs:
+      scope:
+        description: "quick = every case once; critical = critical cases five times; full = critical x5, major x2, minor x1"
+        type: choice
+        default: quick
+        options: [quick, critical, full]
+      only:
+        description: "Optional: comma-separated case ids (for example RT-01,EB-01). Overrides the scope"
+        required: false
+        default: ""
+jobs:
+  evals:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci
+      - name: Check the key is set
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          if [ -z "$ANTHROPIC_API_KEY" ]; then echo "The repository secret ANTHROPIC_API_KEY is not set."; exit 1; fi
+      - name: Run evals
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          EVAL_SCOPE: ${{ inputs.scope }}
+          EVAL_ONLY: ${{ inputs.only }}
+        run: npm run evals
+      - name: Keep the report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with: { name: eval-report, path: evals/results/, if-no-files-found: ignore }
