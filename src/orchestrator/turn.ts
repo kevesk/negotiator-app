@@ -12,7 +12,7 @@ import { reviewBrief, FINDING_LABEL, type CriticReport } from "@/agents/critic";
 import { PREP_BRIEF_TEMPLATE, PREP_BRIEF_ADDITIONS, SCRIPT_BLOCK_TEMPLATE as SCRIPT_FORMAT } from "@/agents/templates.generated";
 import { SLOT_DEFS } from "./flow.generated";
 import type { ChatModel } from "./model";
-import { OUTPUT_FORMAT, splitTrailer, finalSuggestions, nextStepText } from "./guide";
+import { COACH_STYLE, OUTPUT_FORMAT, splitTrailer, finalSuggestions, nextStepText } from "./guide";
 
 export interface TurnDeps {
   model: ChatModel;
@@ -89,7 +89,7 @@ export async function runTurn(deps: TurnDeps, prev: SessionState, message: strin
   const asks = plan.ask.map((id) => `- ${id}${SLOT_DEFS[id]?.ask ? `: e.g. "${SLOT_DEFS[id]!.ask}"` : ""}`).join("\n");
   const system = [
     buildSystemPrompt({ lang: s.language, path: slotValue(s, "path"), stage: plan.stage, modifiers: s.modifiers }),
-    "", OUTPUT_FORMAT, "", `Stage goal: ${STAGE_GOAL[plan.stage]}`,
+    "", COACH_STYLE, "", OUTPUT_FORMAT, "", `Stage goal: ${STAGE_GOAL[plan.stage]}`,
     plan.ask.length ? `Ask for these now, and nothing else (at most two questions):\n${asks}` : "Do not ask for anything new: present the results below and end with a next step.",
     confirm.length ? `\nThe user pasted a session summary. Briefly confirm these time-sensitive items before relying on them: ${confirm.join(", ")}.` : "",
     "", "What you know so far:", stateSummary(s),

@@ -82,10 +82,10 @@ export function retrieve(query: string, s: RetrievalState, o: RetrievalOptions =
   const { maxChunks, charBudget, linkSlots } = { ...DEFAULTS, ...o };
   const p = prep(ix);
   const aliasHits = aliasMatches(query, ix);
-  // An explicit alias in the message (e.g. "kollektivavtal") waives the modifier gate for that note only,
+  // An explicit alias in the message (e.g. "kollektivavtal", "lönetransparensdirektivet") waives the modifier and stage gates for that note only,
   // so the notes that help detect a modifier are reachable before it is set. Audience, path, stage,
   // language and status still apply.
-  const eligible = new Set(ix.notes.filter((n) => passesFilter(n, s) || (aliasHits.has(n.name) && passesFilter(n, { ...s, modifiers: n.modifiers }))).map((n) => n.name));
+  const eligible = new Set(ix.notes.filter((n) => passesFilter(n, s) || (aliasHits.has(n.name) && passesFilter(n, { ...s, modifiers: n.modifiers, stage: n.stages.includes(s.stage) ? s.stage : (n.stages[0] ?? s.stage) }))).map((n) => n.name));
   const qTerms = [...new Set([...tokenize(query), ...[...aliasHits].flatMap((nm) => tokenize(p.notes.get(nm)!.title))])];
   const ids = ix.chunks.filter((c) => eligible.has(c.note)).map((c) => c.id);
   const sem = o.semantic?.(query, ids);

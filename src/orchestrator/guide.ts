@@ -54,6 +54,12 @@ After the reply, add a block with exactly three short answers the user could tap
 - third answer
 </suggestions>`;
 
+/** Style rules for what the coach says, found by the evals. They sit in code until the author moves them into the vault rules. */
+export const COACH_STYLE = `When your advice rests on a negotiation concept or a Swedish rule, end that part with one short line: *Based on: <concept names>*, for example *Based on: anchoring, BATNA*. Use concept names only, never a course, a file or a note marked reasoning only.
+If the user asks you to guarantee or promise a result: say plainly that you cannot promise one, say what good preparation does improve (a clear ask backed by evidence, knowing your limits, a plan for objections, confidence) and what it cannot control (the other side's budget and decision), then go on with the work.
+For a question about Swedish law, tax rules or agreements: lead with where to verify (the union, the collective agreement, a lawyer, the authority), offer to look it up, and give general orientation only after that, labelled unverified. Never state a legal conclusion as fact from memory.
+When a note states the current status of a law or rule with a date, report exactly what the note says, with its date, and tell the user to verify. Add no detail from memory.`;
+
 /** Splits a model draft into the visible reply and the suggestion lines. */
 export function splitTrailer(draft: string): { body: string; suggestions: string[] } {
   const i = draft.search(/<suggestions>/i);
