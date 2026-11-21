@@ -4,6 +4,7 @@ import { buildSystemPrompt } from "@/agents/prompt";
 import { clone, setSlot, slotValue, type SessionState } from "./state";
 import { detectModifiers, numbersGateOpen, sidebarStep, STAGE_GOAL, workPlan, type Tool, type WorkPlan } from "./controller";
 import { extractSlots, applyExtraction } from "./extract";
+import { fromSummary } from "./summary";
 import { runNumbersTool, type MarketRange } from "./tools";
 import { SLOT_DEFS } from "./flow.generated";
 import type { ChatModel } from "./model";
@@ -36,6 +37,9 @@ export async function runTurn(deps: TurnDeps, prev: SessionState, message: strin
   const s = clone(prev);
   s.turn += 1; s.userTexts.push(message);
 
+  // a pasted session summary is read as user data; time-sensitive items are confirmed with the user
+  let confirm: string[] = [];
+  if (message.includes("SESSION SUMMARY v1")) { const r0 = fromSummary(message, s); confirm = r0.confirm; if (!r0.ok) s.userTexts.push("(the pasted summary could not be read)"); }
   // 1-2. update the state from the message; changed slots invalidate their dependants
   let plan = workPlan(s);
   const ext = await extractSlots(deps.model, s, message, plan.missing);
@@ -70,6 +74,7 @@ export async function runTurn(deps: TurnDeps, prev: SessionState, message: strin
     buildSystemPrompt({ lang: s.language, path: slotValue(s, "path"), stage: plan.stage, modifiers: s.modifiers }),
     "", `Stage goal: ${STAGE_GOAL[plan.stage]}`,
     plan.ask.length ? `Ask for these now, and nothing else (at most two questions):\n${asks}` : "Do not ask for anything new: present the results below and end with a next step.",
+    confirm.length ? `\nThe user pasted a session summary. Briefly confirm these time-sensitive items before relying on them: ${confirm.join(", ")}.` : "",
     "", "What you know so far:", stateSummary(s),
     Object.keys(s.outputs).length ? `\nTool results (the only source for computed figures):\n${JSON.stringify(s.outputs)}` : "",
     s.outputs.market_range && (s.outputs.market_range as { unavailable?: boolean }).unavailable ? "\nNo market data could be found. Say so plainly and ask the user for their own evidence (job ads with pay ranges, union statistics, colleagues' experience)." : "",
