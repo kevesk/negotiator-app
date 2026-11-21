@@ -11,8 +11,8 @@ import type { ChatModel } from "./model";
 
 export interface TurnDeps {
   model: ChatModel;
-  /** Live market research (milestone 6). Returns null when nothing could be found. */
-  researcher?: (s: SessionState) => Promise<MarketRange | null>;
+  /** Live market research. `range` is null when no figure was found; `research` is the full structured result for the coach. */
+  researcher?: (s: SessionState) => Promise<{ range: MarketRange | null; research?: unknown } | null>;
   /** Other prompt-step tools (offer analyzer, evidence builder, script writer) as they are built. */
   tools?: Partial<Record<Tool, (s: SessionState) => Promise<unknown>>>;
   /** Development: draft notes allowed. Release: false. */
@@ -50,8 +50,9 @@ export async function runTurn(deps: TurnDeps, prev: SessionState, message: strin
   // 3-4. run the stage's tool if its gate is met
   const tool = plan.runTool;
   if (tool === "researcher") {
-    const range = deps.researcher ? await deps.researcher(s).catch(() => null) : null;
-    if (range) { setSlot(s, "market_range", range, "researcher"); s.outputs.market_range = range; }
+    const res = deps.researcher ? await deps.researcher(s).catch(() => null) : null;
+    if (res?.research) s.outputs.market_research = res.research; // facts, sources, caveats and gaps for the coach
+    if (res?.range) { setSlot(s, "market_range", res.range, "researcher"); s.outputs.market_range = res.range; }
     else s.outputs.market_range = { unavailable: true }; // the coach asks the user for a range or their own data instead
   } else if (tool === "numbers_engine") {
     const r = runNumbersTool(s); if (!("needs" in r)) s.outputs.numbers = r;

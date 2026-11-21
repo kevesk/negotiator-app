@@ -14,7 +14,8 @@
     "build-tax-data": "node scripts/build-tax-data.mjs",
     "build-prompt": "node scripts/build-prompt.mjs",
     "build-flow": "node scripts/build-flow.mjs",
-    "build-all": "node scripts/build-index.mjs \"$VAULT\" && node scripts/build-prompt.mjs \"$VAULT\" && node scripts/build-flow.mjs \"$VAULT\""
+    "build-all": "node scripts/build-index.mjs \"$VAULT\" && node scripts/build-prompt.mjs \"$VAULT\" && node scripts/build-flow.mjs \"$VAULT\" && node scripts/build-researcher.mjs \"$VAULT\"",
+    "build-researcher": "node scripts/build-researcher.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.12.0",
