@@ -21,7 +21,7 @@ export async function handleChat(body: ChatRequest, model: ChatModel | null, tod
   else { if (JSON.stringify(body.state).length > LIMITS.stateBytes || !validState(body.state)) return { status: 400, body: { error: "bad_state" } }; state = body.state; }
   try {
     const r = await runTurn({ model, researcher, allowDraft: process.env.RELEASE_MODE !== "1", today }, state, body.message);
-    return { status: 200, body: { reply: r.reply, state: r.state, sidebar: r.sidebar, stage: r.plan.stage, usedFallback: r.usedFallback } };
+    return { status: 200, body: { reply: r.reply, state: r.state, sidebar: r.sidebar, next: r.next, suggestions: r.suggestions, stage: r.plan.stage, usedFallback: r.usedFallback } };
   } catch {
     return { status: 502, body: { error: "model_error" } }; // no content in the error, nothing logged
   }

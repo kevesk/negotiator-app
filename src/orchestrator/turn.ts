@@ -8,6 +8,7 @@ import { fromSummary } from "./summary";
 import { runNumbersTool, type MarketRange } from "./tools";
 import { SLOT_DEFS } from "./flow.generated";
 import type { ChatModel } from "./model";
+import { OUTPUT_FORMAT, splitTrailer, finalSuggestions, nextStepText } from "./guide";
 
 export interface TurnDeps {
   model: ChatModel;
@@ -21,6 +22,8 @@ export interface TurnDeps {
 }
 export interface TurnResult {
   reply: string; state: SessionState; plan: WorkPlan; sidebar: string;
+  /** What the user should do next (code-owned) and exactly three tap-to-send answers. */
+  next: string; suggestions: string[];
   findings: Finding[]; usedFallback: boolean; retrieved: Retrieved[];
 }
 
@@ -73,7 +76,7 @@ export async function runTurn(deps: TurnDeps, prev: SessionState, message: strin
   const asks = plan.ask.map((id) => `- ${id}${SLOT_DEFS[id]?.ask ? `: e.g. "${SLOT_DEFS[id]!.ask}"` : ""}`).join("\n");
   const system = [
     buildSystemPrompt({ lang: s.language, path: slotValue(s, "path"), stage: plan.stage, modifiers: s.modifiers }),
-    "", `Stage goal: ${STAGE_GOAL[plan.stage]}`,
+    "", OUTPUT_FORMAT, "", `Stage goal: ${STAGE_GOAL[plan.stage]}`,
     plan.ask.length ? `Ask for these now, and nothing else (at most two questions):\n${asks}` : "Do not ask for anything new: present the results below and end with a next step.",
     confirm.length ? `\nThe user pasted a session summary. Briefly confirm these time-sensitive items before relying on them: ${confirm.join(", ")}.` : "",
     "", "What you know so far:", stateSummary(s),
@@ -82,7 +85,8 @@ export async function runTurn(deps: TurnDeps, prev: SessionState, message: strin
     r.items.length ? `\nNotes you may use:\n${renderForPrompt(r.items)}` : "\nNo relevant notes were found: if you answer without backing, label it as a guess (rule 6).",
   ].filter((x) => x !== "").join("\n");
   const messages = [...s.messages, { role: "user" as const, content: message }];
-  let draft = await deps.model.complete({ purpose: "reply", system, messages });
+  let raw = await deps.model.complete({ purpose: "reply", system, messages });
+  let { body: draft, suggestions: offered } = splitTrailer(raw);
 
   // 7. pre-send checks: revise once, then send the safest version
   const sources = [...s.userTexts, ...r.items.map((i) => i.text), JSON.stringify(s.outputs), ...Object.values(s.slots).filter((v) => !v.stale).map((v) => JSON.stringify(v.value))];
@@ -90,13 +94,18 @@ export async function runTurn(deps: TurnDeps, prev: SessionState, message: strin
   let check = preSend(draft, ctx); let usedFallback = false;
   if (!check.ok) {
     const fix = check.findings.filter((f) => f.severity === "error").map((f) => `${f.rule}: ${f.detail}`).join("; ");
-    draft = await deps.model.complete({ purpose: "rewrite", system, messages: [...messages, { role: "assistant", content: draft }, { role: "user", content: `Rewrite your last reply so it fixes this and changes nothing else: ${fix}. Output only the new reply.` }] });
+    raw = await deps.model.complete({ purpose: "rewrite", system, messages: [...messages, { role: "assistant", content: raw }, { role: "user", content: `Rewrite your last reply so it fixes this and changes nothing else: ${fix}. Output only the new reply, followed by the suggestions block.` }] });
+    ({ body: draft, suggestions: offered } = splitTrailer(raw));
     check = preSend(draft, ctx);
-    if (!check.ok) { s.failures.push(...check.findings.filter((f) => f.severity === "error").map((f) => f.rule)); draft = FALLBACK[s.language]; usedFallback = true; }
+    if (!check.ok) { s.failures.push(...check.findings.filter((f) => f.severity === "error").map((f) => f.rule)); draft = FALLBACK[s.language]; offered = []; usedFallback = true; }
   }
   if (plan.stage === "brief" && !usedFallback) s.outputs.brief = true;
 
+  // the suggestions go through the same checks as the reply; anything that fails is replaced by safe defaults
+  const suggestions = finalSuggestions(offered, plan.stage, s.language, (t) => preSend(t, ctx).ok, s.userTexts.join(" "));
+  const next = nextStepText(plan.stage, slotValue<"A" | "B">(s, "path"), s.language);
+
   // 8. record the exchange
   s.messages.push({ role: "user", content: message }, { role: "assistant", content: draft });
-  return { reply: draft, state: s, plan, sidebar: sidebarStep(plan.stage), findings: check.findings, usedFallback, retrieved: r.items };
+  return { reply: draft, state: s, plan, sidebar: sidebarStep(plan.stage), next, suggestions, findings: check.findings, usedFallback, retrieved: r.items };
 }

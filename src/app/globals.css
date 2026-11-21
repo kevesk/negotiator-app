@@ -26,9 +26,21 @@ button { font: inherit; cursor: pointer; }
 .steps li[data-done="true"] { color: var(--fg); }
 .chat { display: flex; flex-direction: column; gap: 10px; min-height: 0; }
 .log { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; padding-right: 4px; max-height: calc(100dvh - 240px); }
-.msg { max-width: 88%; padding: 10px 14px; border-radius: 14px; white-space: pre-wrap; border: 1px solid var(--line); background: var(--card); }
+.msg { max-width: 88%; padding: 10px 14px; border-radius: 14px; border: 1px solid var(--line); background: var(--card); }
 .msg.user { align-self: flex-end; background: var(--user); }
 .msg.err { color: #b42318; }
 .compose { display: flex; gap: 8px; }
 .compose textarea { flex: 1; resize: none; font: inherit; color: var(--fg); background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; min-height: 48px; max-height: 160px; }
 .foot { color: var(--muted); font-size: .85rem; }
+.msg.user, .msg.err { white-space: pre-wrap; }
+.md > * { margin: 0 0 .6em; } .md > *:last-child { margin-bottom: 0; }
+.md ul, .md ol { padding-left: 1.3rem; display: grid; gap: .25em; }
+.md strong { font-weight: 650; } .md code { font: .9em ui-monospace, monospace; background: var(--user); padding: 1px 5px; border-radius: 5px; }
+.tablewrap { overflow-x: auto; } .md table { border-collapse: collapse; font-size: .92rem; } .md th, .md td { border: 1px solid var(--line); padding: 4px 10px; text-align: left; } .md th { background: var(--user); }
+.next { display: flex; flex-direction: column; gap: 2px; border-left: 3px solid var(--accent); background: var(--user); border-radius: 0 10px 10px 0; padding: 8px 12px; }
+.nextlabel { font-size: .78rem; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+.nexttext { font-weight: 500; } .then { color: var(--muted); font-weight: 400; white-space: nowrap; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip { border: 1px solid var(--accent); color: var(--accent); background: var(--card); padding: 8px 14px; border-radius: 999px; text-align: left; line-height: 1.3; }
+.chip:hover, .chip:focus-visible { background: var(--accent); color: var(--accent-fg); }
+@media (max-width: 700px) { .chip { width: 100%; border-radius: 12px; } }

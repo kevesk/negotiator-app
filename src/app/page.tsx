@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { T, STEP_OF, type Lang } from "./ui-text";
 import { newState, type SessionState } from "@/orchestrator/state";
 import { toSummary } from "@/orchestrator/summary";
+import { Markdown } from "./markdown";
 
 interface Msg { role: "user" | "assistant"; content: string; error?: boolean }
 
@@ -14,6 +15,8 @@ export default function Home() {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [step, setStep] = useState(0);
+  const [next, setNext] = useState("");
+  const [chips, setChips] = useState<string[]>([]);
   const end = useRef<HTMLDivElement>(null);
   const t = T[lang];
 
@@ -22,18 +25,18 @@ export default function Home() {
 
   const start = () => {
     const s = newState(lang); s.messages.push({ role: "assistant", content: t.opening });
-    setState(s); setLog([{ role: "assistant", content: t.opening }]); setStep(0); setStarted(true);
+    setState(s); setLog([{ role: "assistant", content: t.opening }]); setStep(0); setNext(t.openingNext); setChips([...t.openingChips]); setStarted(true);
   };
-  const reset = () => { setStarted(false); setState(null); setLog([]); setText(""); };
+  const reset = () => { setStarted(false); setState(null); setLog([]); setText(""); setChips([]); setNext(""); };
 
-  async function send() {
-    const message = text.trim(); if (!message || busy || !state) return;
-    setText(""); setBusy(true); setLog((l) => [...l, { role: "user", content: message }]);
+  async function send(override?: string) {
+    const message = (override ?? text).trim(); if (!message || busy || !state) return;
+    setText(""); setChips([]); setBusy(true); setLog((l) => [...l, { role: "user", content: message }]);
     try {
       const res = await fetch("/api/chat", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ message, state }) });
       const j = await res.json();
       if (!res.ok) { const e = (T[lang].errors as Record<string, string>)[j.error] ?? t.errors.generic; setLog((l) => [...l, { role: "assistant", content: e, error: true }]); }
-      else { setState(j.state); setStep(STEP_OF[j.stage] ?? 0); setLog((l) => [...l, { role: "assistant", content: j.reply }]); }
+      else { setState(j.state); setStep(STEP_OF[j.stage] ?? 0); setNext(j.next ?? ""); setChips(Array.isArray(j.suggestions) ? j.suggestions.slice(0, 3) : []); setLog((l) => [...l, { role: "assistant", content: j.reply }]); }
     } catch { setLog((l) => [...l, { role: "assistant", content: t.errors.generic, error: true }]); }
     finally { setBusy(false); }
   }
@@ -65,10 +68,21 @@ export default function Home() {
         <ol className="steps" aria-label="Progress">{t.steps.map((s, i) => <li key={s} data-on={i === step} data-done={i < step}>{s}</li>)}</ol>
         <section className="chat">
           <div className="log" aria-live="polite">
-            {log.map((m, i) => <div key={i} className={`msg ${m.role === "user" ? "user" : ""} ${m.error ? "err" : ""}`}>{m.content}</div>)}
+            {log.map((m, i) => <div key={i} className={`msg ${m.role === "user" ? "user" : ""} ${m.error ? "err" : ""}`}>{m.role === "user" || m.error ? m.content : <Markdown text={m.content} />}</div>)}
             {busy && <div className="msg" aria-busy="true">{t.thinking}</div>}
             <div ref={end} />
           </div>
+          {next && !busy && (
+            <div className="next" role="status">
+              <span className="nextlabel">{t.nextLabel} · {t.stepOf.replace("{n}", String(step + 1)).replace("{total}", String(t.steps.length))}</span>
+              <span className="nexttext">{next}{step + 1 < t.steps.length && <span className="then"> {t.then}: {t.steps[step + 1]}</span>}</span>
+            </div>
+          )}
+          {chips.length > 0 && !busy && (
+            <div className="chips" role="group" aria-label={t.suggestLabel}>
+              {chips.map((c) => <button key={c} className="chip" onClick={() => void send(c)}>{c}</button>)}
+            </div>
+          )}
           <div className="compose">
             <textarea value={text} placeholder={t.placeholder} rows={2} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void send(); } }} />
             <button className="btn primary" onClick={() => void send()} disabled={busy || !text.trim()}>{t.send}</button>
