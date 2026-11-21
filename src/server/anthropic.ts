@@ -31,3 +31,16 @@ export function anthropicModel(opts: { apiKey: string; model?: string }): ChatMo
     },
   };
 }
+
+import { runResearch, toMarketRange, researchInputFrom } from "@/agents/researcher";
+import { slotValue, type SessionState } from "@/orchestrator";
+/** Live market research on the Claude API's web search and fetch tools, limited to the source catalogue (milestone 6). */
+export function anthropicResearcher(opts: { apiKey: string; model?: string; today: string }) {
+  const client = new Anthropic({ apiKey: opts.apiKey, maxRetries: 1, timeout: 40_000 });
+  return async (s: SessionState) => {
+    const input = researchInputFrom((id) => slotValue(s, id)); // never includes own target, walk-away or current pay
+    const r = await runResearch(input, { client: client as never, model: opts.model ?? DEFAULT_MODEL, today: opts.today });
+    if (!r.ok || !r.value) return { range: null, research: { failed: true, gaps_and_next_steps: ["No figures could be verified from the source catalogue. Ask the user for a job ad with a pay range, a union or Saco pay survey, or their own data."] } };
+    return { range: toMarketRange(r.value), research: r.value };
+  };
+}
