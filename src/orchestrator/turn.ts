@@ -7,6 +7,9 @@ import { extractSlots, applyExtraction } from "./extract";
 import { fromSummary } from "./summary";
 import { runNumbersTool, type MarketRange } from "./tools";
 import { runOfferTool } from "./offer";
+import { runScriptTool } from "./scripts";
+import { reviewBrief, FINDING_LABEL, type CriticReport } from "@/agents/critic";
+import { PREP_BRIEF_TEMPLATE, PREP_BRIEF_ADDITIONS, SCRIPT_BLOCK_TEMPLATE as SCRIPT_FORMAT } from "@/agents/templates.generated";
 import { SLOT_DEFS } from "./flow.generated";
 import type { ChatModel } from "./model";
 import { OUTPUT_FORMAT, splitTrailer, finalSuggestions, nextStepText } from "./guide";
@@ -17,6 +20,8 @@ export interface TurnDeps {
   researcher?: (s: SessionState) => Promise<{ range: MarketRange | null; research?: unknown } | null>;
   /** Other prompt-step tools (offer analyzer, evidence builder, script writer) as they are built. */
   tools?: Partial<Record<Tool, (s: SessionState) => Promise<unknown>>>;
+  /** Review the final brief with the Critic (default on). */
+  critic?: boolean;
   /** Development: draft notes allowed. Release: false. */
   allowDraft?: boolean;
   today?: string;
@@ -63,6 +68,8 @@ export async function runTurn(deps: TurnDeps, prev: SessionState, message: strin
   } else if (tool === "offer_analyzer" && !deps.tools?.offer_analyzer) {
     const r = runOfferTool(s, deps.today);
     if (!("needs" in r)) { s.outputs.offer_analysis = r; setSlot(s, "total_comp_offer", { cash_subtotal: r.cash_subtotal, parts: r.parts.length }, "computed"); if (r.offers_comparison) setSlot(s, "offer_comparison", { columns: r.offers_comparison.columns }, "computed"); }
+  } else if (tool === "script_writer" && !deps.tools?.script_writer) {
+    s.outputs.scripts = await runScriptTool(s, deps.model, deps.today, deps.allowDraft ?? true);
   } else if (tool) {
     const run = deps.tools?.[tool]; const key = tool === "script_writer" ? "scripts" : tool === "offer_analyzer" ? "offer_analysis" : "evidence_summary";
     s.outputs[key] = run ? await run(s).catch(() => ({ failed: true })) : { notBuilt: true };
@@ -86,6 +93,8 @@ export async function runTurn(deps: TurnDeps, prev: SessionState, message: strin
     "", "What you know so far:", stateSummary(s),
     Object.keys(s.outputs).length ? `\nTool results (the only source for computed figures):\n${JSON.stringify(s.outputs)}` : "",
     s.outputs.offer_analysis ? "\nOffer analysis is ready (tool results, offer_analysis). Present it as a table of parts beside base pay and never as one total value: cash subtotal, then pension, vacation, benefits, equity and terms, each with its tag and whether it is an estimate. Say plainly which parts are unknown and what to ask the employer, name the red flags in plain words, and if offers_comparison exists, show that side-by-side table (one column per offer, the current job as a cash-only column) and note which has the highest guaranteed cash as a proposal only; if a comparison with the current job exists, propose the stronger alternative as the fallback option (BATNA) and ask the user to confirm before it is used." : "",
+    s.outputs.scripts && plan.stage === "scripts" ? "\nScripts are in the tool results (scripts). Present them for the user's channel and language, formatted like this script block, each with its goal, the text, the tone and what to say if they reply with the likely objection:\n" + SCRIPT_FORMAT + "\nIf provisional is true, list the assumptions. The user edits and sends them; never say anything was sent. If scripts.failed is true, say plainly that the wording could not be made safely and offer to try again. Use only the figures in the scripts." : "",
+    plan.stage === "brief" ? "\nWrite the final prep brief now, in the user's language, using exactly this template. Fill every field from the facts and tool results; write unknown where a fact is missing; no placeholder may remain; keep the headings and their numbers; one to two pages; put the scripts from the tool results into section 5; end with the checklist, the assumptions, the line of concepts used and the preparation-support line.\n\n" + PREP_BRIEF_TEMPLATE + "\n\nPath additions: " + PREP_BRIEF_ADDITIONS : "",
     s.outputs.market_range && (s.outputs.market_range as { unavailable?: boolean }).unavailable ? "\nNo market data could be found. Say so plainly and ask the user for their own evidence (job ads with pay ranges, union statistics, colleagues' experience)." : "",
     r.items.length ? `\nNotes you may use:\n${renderForPrompt(r.items)}` : "\nNo relevant notes were found: if you answer without backing, label it as a guess (rule 6).",
   ].filter((x) => x !== "").join("\n");
@@ -103,6 +112,26 @@ export async function runTurn(deps: TurnDeps, prev: SessionState, message: strin
     ({ body: draft, suggestions: offered } = splitTrailer(raw));
     check = preSend(draft, ctx);
     if (!check.ok) { s.failures.push(...check.findings.filter((f) => f.severity === "error").map((f) => f.rule)); draft = FALLBACK[s.language]; offered = []; usedFallback = true; }
+  }
+  // the Critic reviews the final brief once, in its own context; must-fix and should-fix items are fixed once, then anything left is stated openly
+  if (plan.stage === "brief" && !usedFallback && deps.critic !== false && !prev.outputs.brief) {
+    const n = (id: string) => { const v = slotValue<unknown>(s, id); return typeof v === "number" ? v : undefined; };
+    const ctxFor = (text: string) => ({ lang: s.language, brief: text, state: stateSummary(s), outputs: JSON.stringify(s.outputs), walkAway: n("walk_away"), target: n("own_target"), batna: n("batna"), sources });
+    let report: CriticReport = await reviewBrief(deps.model, ctxFor(draft));
+    const fixable = report.findings.filter((f) => f.severity !== "note");
+    if (fixable.length) {
+      const list = fixable.map((f) => `- ${f.id} (${f.where}): ${f.what}. ${f.suggested_fix}`).join("\n");
+      const rawFix = await deps.model.complete({ purpose: "rewrite", system, messages: [...messages, { role: "assistant", content: raw }, { role: "user", content: `A reviewer found these problems in your brief. Fix them and change nothing else, keeping the template. Output only the new brief, followed by the suggestions block.\n${list}` }] });
+      const fixed = splitTrailer(rawFix);
+      if (fixed.body && preSend(fixed.body, ctx).ok) { draft = fixed.body; offered = fixed.suggestions; report = await reviewBrief(deps.model, ctxFor(draft)); }
+    }
+    const open = report.findings.filter((f) => f.severity === "must_fix");
+    if (open.length) {
+      s.failures.push(...open.map((f) => `critic:${f.id}`));
+      const labels = [...new Set(open.map((f) => FINDING_LABEL[s.language][f.id]))].join("; ");
+      draft += s.language === "sv" ? `\n\n**Öppna punkter i det här underlaget:** granskningen hittade saker som inte är helt klara (${labels}). Kontrollera dem innan du förlitar dig på det.` : `\n\n**Open points in this brief:** the review found things that are not fully settled (${labels}). Check them before you rely on the brief.`;
+    }
+    s.outputs.critic_report = { verdict: report.verdict, checks_failed: report.checks_failed };
   }
   if (plan.stage === "brief" && !usedFallback) s.outputs.brief = true;
 
