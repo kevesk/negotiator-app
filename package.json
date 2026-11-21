@@ -11,7 +11,8 @@
     "test": "vitest run",
     "sync-vault": "bash scripts/sync-vault.sh",
     "build-index": "node scripts/build-index.mjs",
-    "build-tax-data": "node scripts/build-tax-data.mjs"
+    "build-tax-data": "node scripts/build-tax-data.mjs",
+    "build-prompt": "node scripts/build-prompt.mjs"
   },
   "dependencies": {
     "next": "^15.5.29",
