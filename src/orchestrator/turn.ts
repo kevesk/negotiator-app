@@ -30,6 +30,8 @@ export interface TurnResult {
   reply: string; state: SessionState; plan: WorkPlan; sidebar: string;
   /** What the user should do next (code-owned) and exactly three tap-to-send answers. */
   next: string; suggestions: string[];
+  /** True when this reply is the first final brief (the app then shows copy, PDF and the usefulness question). */
+  isBrief: boolean;
   findings: Finding[]; usedFallback: boolean; retrieved: Retrieved[];
 }
 
@@ -141,5 +143,5 @@ export async function runTurn(deps: TurnDeps, prev: SessionState, message: strin
 
   // 8. record the exchange
   s.messages.push({ role: "user", content: message }, { role: "assistant", content: draft });
-  return { reply: draft, state: s, plan, sidebar: sidebarStep(plan.stage), next, suggestions, findings: check.findings, usedFallback, retrieved: r.items };
+  return { reply: draft, state: s, plan, sidebar: sidebarStep(plan.stage), next, suggestions, isBrief: plan.stage === "brief" && !usedFallback && !prev.outputs.brief, findings: check.findings, usedFallback, retrieved: r.items };
 }
