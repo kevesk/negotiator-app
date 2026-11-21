@@ -7,3 +7,4 @@ export * from "./concession";
 export * from "./scoring";
 export * from "./checks";
 export * from "./zopa";
+export * from "./tax";
