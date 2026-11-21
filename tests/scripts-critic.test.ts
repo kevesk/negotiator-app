@@ -58,7 +58,7 @@ describe("critic code checks", () => {
     expect(codeChecks(ctx({ brief: BRIEF + "\nAs we learned in the negotiation course." })).some((f) => f.id === "leaks")).toBe(true);
   });
   it("finds sections by number in any language", () => expect(sectionOf(BRIEF.replace("What to say", "Vad du ska säga"), 5)).toContain("The ask"));
-  it("flags a brief that is too long", () => expect(codeChecks(ctx({ brief: BRIEF + " word".repeat(1200) })).some((f) => f.id === "length")).toBe(true));
+  it("flags a brief that is too long", () => expect(codeChecks(ctx({ brief: BRIEF + " word".repeat(900) })).some((f) => f.id === "length")).toBe(true));
 });
 describe("critic review", () => {
   const critic = (reply: string | Error): ChatModel => ({ async complete() { if (reply instanceof Error) throw reply; return reply; } });
