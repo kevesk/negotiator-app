@@ -33,3 +33,9 @@ describe("interface text", () => {
   it("the provider notice says what is true: the service stores nothing, a provider processes the text", () => { expect(T.en.notice).toMatch(/AI provider/); expect(T.en.notice).toMatch(/Nothing is stored/); expect(T.sv.notice).toMatch(/AI-leverantör/); });
 });
 vi.restoreAllMocks();
+
+import { cleanForReader as clean2 } from "@/app/reader";
+import { it as it2, expect as expect2 } from "vitest";
+it2("an unverified tag reads as a plain aside", () => {
+  expect2(clean2("usually lifts pension too [unverified: depends on your agreement].", "en")).toBe("usually lifts pension too (depends on your agreement).");
+});

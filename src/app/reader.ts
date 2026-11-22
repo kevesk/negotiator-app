@@ -11,7 +11,8 @@ const ONE = new RegExp(TAG, "gi");
 
 /** Removes source tags, keeps "assumption" as a marker, and writes the Based-on line in the user's language. */
 export function cleanForReader(text: string, lang: Lang): string {
-  let t = text.replace(COMBO, (m) => (/assumed/i.test(m) ? ` ${ASSUMED}` : ""));
+  let t = text.replace(/\s*\[(?:unverified|overifierat)\s*:?\s*([^\]\n]{0,90})\]/gi, (_m, why: string) => (why.trim() ? ` (${why.trim()})` : ""));
+  t = t.replace(COMBO, (m) => (/assumed/i.test(m) ? ` ${ASSUMED}` : ""));
   t = t.replace(ONE, (m) => (/assumed/i.test(m) ? ` ${ASSUMED}` : ""));
   t = t.replace(/[ \t]+([,.;:)])/g, "$1").replace(/\(\s*\)/g, "").replace(/[ \t]{2,}/g, " ").replace(/ +$/gm, "");
   if (lang === "sv") t = t.replace(/(\*?)\s*Based on:/g, "$1Baseras på:");

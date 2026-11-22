@@ -20,3 +20,17 @@ describe("fixed-value slots are normalised", () => {
     const p = extractionPrompt(["path"]); expect(p).toContain('path is "A"'); expect(p).toContain("Extract every fact");
   });
 });
+
+describe("money slots are one number", () => {
+  it("the target from the live test becomes 50 000 and the numbers engine can run", async () => {
+    const e = parseExtraction('{"slots":{"own_target":{"value":{"base_salary":50000,"remote_days_per_week":2}},"walk_away":{"value":"47 000 kr"},"first_offer":{"value":"51,5k"}}}');
+    expect(e.slots.own_target!.value).toBe(50000); expect(e.slots.walk_away!.value).toBe(47000); expect(e.slots.first_offer!.value).toBe(51500);
+    const { runNumbersTool } = await import("@/orchestrator/tools");
+    const s = newState("en"); setSlot(s, "own_target", e.slots.own_target!.value, "user"); setSlot(s, "walk_away", 47000, "user");
+    expect("needs" in runNumbersTool(s)).toBe(false);
+  });
+  it("drops what cannot be read as one amount", () => {
+    expect(parseExtraction('{"slots":{"own_target":{"value":{"a":50000,"b":60000}}}}').slots.own_target).toBeUndefined();
+    expect(parseExtraction('{"slots":{"own_target":{"value":"a good raise"}}}').slots.own_target).toBeUndefined();
+  });
+});
