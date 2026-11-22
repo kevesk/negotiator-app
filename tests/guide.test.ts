@@ -42,3 +42,12 @@ describe("turn and endpoint", () => {
   });
 });
 describe("checklists", () => { it("shows task-list items as checkboxes", () => { const h = html("- [ ] Print this\n- [x] Done"); expect(h).toContain("☐ Print this"); expect(h).toContain("☑ Done"); }); });
+
+describe("coach style rules come from the vault", () => {
+  it("one rule per line, generated from Coach-Persona-and-Rules", async () => {
+    const { COACH_STYLE } = await import("@/orchestrator/guide");
+    const gen = await import("@/agents/hard-rules.generated");
+    expect(COACH_STYLE).toBe(gen.COACH_STYLE); expect(COACH_STYLE.split("\n").length).toBeGreaterThanOrEqual(14);
+    expect(COACH_STYLE).toContain("*Based on:"); expect(COACH_STYLE).not.toMatch(/\*\*[^*]+\.\*\*/); // labels stay in the vault
+  });
+});
