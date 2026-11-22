@@ -16,7 +16,7 @@ export function normaliseMessages(msgs: ChatMessage[]): ChatMessage[] {
 }
 /** The cheaper model for the small jobs: reading facts out of a message, and the eval harness's setup and grading (cost decision, 2026-11-22). */
 export const FAST_MODEL = "claude-haiku-5-5";
-const FAST_PURPOSES = new Set<ModelRequest["purpose"]>(["extract", "setup", "judge"]);
+const FAST_PURPOSES = new Set<ModelRequest["purpose"]>(["extract", "setup", "judge", "script"]);
 const MAX_TOKENS: Record<ModelRequest["purpose"], number> = { extract: 1600, setup: 3000, judge: 1500, reply: 2500, rewrite: 2500, script: 3000, critic: 3000 };
 
 /** Which model a call uses: everything the user reads on the main model, the small jobs on the fast one. */
