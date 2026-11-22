@@ -38,6 +38,7 @@ describe("H12 promises, H13 identity data", () => {
   it("rejects a claim to know their budget", () => expect(rules("I know their budget, it is high. Want a number?")).toContain("H12"));
   it("rejects Swedish promises", () => expect(rules("Jag garanterar att det går bra. Vill du fortsätta?")).toContain("H12"));
   it("allows the words guaranteed pay", () => expect(rules("Keep your walk-away on guaranteed pay only. Is that clear?")).not.toContain("H12"));
+  it("allows a negated guarantee", () => expect(rules("The bonus is variable and not guaranteed, so it stays out. Fine?")).not.toContain("H12"));
   it("still rejects a guaranteed result", () => expect(rules("A raise is guaranteed if you follow this. Ready?")).toContain("H12"));
   it("rejects asking for a personnummer", () => expect(rules("Please share your personnummer so I can check. Okay?")).toContain("H13"));
   it("allows saying not to share it", () => expect(rules("You never need to give me a personnummer. What is your job title?")).toEqual([]));
