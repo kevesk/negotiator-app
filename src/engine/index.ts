@@ -9,3 +9,4 @@ export * from "./checks";
 export * from "./zopa";
 export * from "./tax";
 export * from "./offer";
+export * from "./meso";
