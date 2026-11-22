@@ -87,7 +87,7 @@ export async function judgeReply(model: ChatModel, c: EvalCase, setup: Setup, re
     if (!Array.isArray(j?.must) || j.must.length !== c.must.length || !Array.isArray(j?.must_not) || j.must_not.length !== c.mustNot.length) j = await ask(); // one retry when the answer does not line up with the items
     const take = (arr: unknown, items: string[]): Verdict[] | null => Array.isArray(arr) && arr.length === items.length ? items.map((item, i) => ({ item, pass: (arr[i] as any)?.pass === true, reason: String((arr[i] as any)?.reason ?? "").slice(0, 240) })) : null;
     const must = take(j?.must, c.must), mustNot = take(j?.must_not, c.mustNot);
-    if (!must || !mustNot) return { ok: false, must: [], mustNot: [], error: "the judge's answer did not match the case" };
+    if (!must || !mustNot) return { ok: false, must: [], mustNot: [], error: `the judge's answer did not match the case: ${JSON.stringify(j ?? null).slice(0, 300)}` };
     return { ok: [...must, ...mustNot].every((v) => v.pass), must, mustNot };
   } catch (e) { return { ok: false, must: [], mustNot: [], error: "the judge did not answer" }; }
 }
