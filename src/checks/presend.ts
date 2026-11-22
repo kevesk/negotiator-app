@@ -17,7 +17,7 @@ export interface ReplyContext {
 export interface PreSendResult { ok: boolean; findings: Finding[] }
 
 const GATE_WORDS = /(target|anchor|walk[- ]?away|reservation|landing|mållön|ankare|ankarsiffra|golv|lägsta acceptabla)[^.\n?]{0,50}?\d[\d  .,]{3,}/gi;
-const PROMISE = /\b(i guarantee|(?<!(?:not|n't|never|no|nor|cannot be|can't be|ej|inte) )guaranteed(?!\s+(?:pay|salary|base|variable|bonus|part|parts|cash|amount|income|compensation|element|component|minimum))|i promise|they (will|'ll) (definitely |certainly )?(accept|agree|say yes)|i know (their|the employer'?s|the company'?s) budget|their budget is|jag garanterar|jag lovar|de kommer (säkert |definitivt )?(att )?(acceptera|säga ja)|jag vet (deras|arbetsgivarens|företagets) budget|deras budget är)\b/i;
+const PROMISE = /\b(i guarantee|(?:is|are|be|it's|that's)\s+guaranteed\b|guaranteed\s+(?:to\b|success|result|outcome|raise|increase|yes|win)|i promise|they (will|'ll) (definitely |certainly )?(accept|agree|say yes)|i know (their|the employer'?s|the company'?s) budget|their budget is|jag garanterar|jag lovar|de kommer (säkert |definitivt )?(att )?(acceptera|säga ja)|jag vet (deras|arbetsgivarens|företagets) budget|deras budget är)\b/i;
 /** A promise match only counts when no negation or doubt sits just before it ("cannot say whether their budget is flexible" is honest). */
 const DOUBT = /\b(?:not|n't|never|cannot|can't|whether|if|what|how|unknown|unsure|unclear|no one|nobody|inte|kan inte|om|vad|hur)\b/i;
 export function promises(text: string): boolean {
