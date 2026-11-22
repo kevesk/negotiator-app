@@ -16,7 +16,7 @@ export function extractionPrompt(missing: string[], catalogue?: string): string 
     'done: true only when the user clearly says they are finished, satisfied or want to end the session (for example "thanks, that is all", "I am happy with this", "tack, det räcker"); otherwise false.',
     "Rules: use only ids from the allowed list; include a slot only if the user clearly stated it; never guess; money is SEK, monthly gross unless the user says otherwise (keep their unit in `unit`); dates are ISO; booleans for yes/no.",
     "Offer slots use these shapes. offer_base: a number (monthly gross; set unit to year or hour if they said so) or {\"amount\":n,\"period\":\"month|year|hour\",\"paid_months\":12|13}. offer_variable: {\"guaranteed_yearly\":n,\"min_yearly\":n,\"max_yearly\":n,\"description\":\"how it works\"} or \"none\". offer_pension: {\"agreement\":\"ITP1|ITP2|SAF-LO|KAP-KL|AKAP-KR|PA16\"} or {\"rate_pct\":n} or {\"monthly\":n}, or \"none\" or \"unknown\". offer_vacation: a number of days. offer_benefits: a list of short strings or \"none\". offer_equity: short text, or \"none\". offer_notice_probation: {\"probation_months\":n,\"notice_months\":n,\"non_compete\":\"text\"}. other_offers: a list of {\"employer\":\"name\",\"status\":\"offer|process\",\"package\":{same fields as the offer slots, without the offer_ prefix: base, variable, pension, vacation, benefits, equity, notice_probation}}; include a package only for a real offer with numbers. Never fill a field the user did not state.",
-    'Fixed values: path is "A" (a new job, an offer or an interview process) or "B" (the job they have now); a_phase is pre_offer or offer_received; b_situation is annual_review, mid_year_raise, promotion_or_role_change or counter_to_external_offer; negotiate_scope is "salary only" or "package".',
+    'Fixed values: path is "A" (a new job, an offer or an interview process) or "B" (the job they have now); a_phase is pre_offer or offer_received; b_situation is annual_review, mid_year_raise, promotion_or_role_change or counter_to_external_offer; negotiate_scope is "salary only" or "package"; own_target, walk_away, current_base and first_offer are one number each (monthly base pay in SEK); put other parts of a target, such as remote days, in their own slots or in priorities.',
     "Extract every fact the user stated in this message, also facts that are not in the needed list (for example a target, a walk-away or an alternative given early). Keep values short.",
     `Allowed ids: ${[...ALLOWED].join(", ")}.`,
     `Allowed modifiers: ${MODIFIERS.join(", ")}.`,
@@ -28,7 +28,22 @@ export function extractionPrompt(missing: string[], catalogue?: string): string 
   ].filter(Boolean).join("\n");
 }
 /** Maps free wording of the fixed-value slots onto the values the flow uses; anything unclear is dropped rather than guessed. */
+const MONEY = new Set(["own_target", "walk_away", "current_base", "first_offer"]);
+/** A monthly amount from a number, "50 000 kr", "50k" or an object such as {base_salary: 50000, remote_days: 2}. */
+export function moneyValue(v: unknown): number | undefined {
+  if (typeof v === "number") return Number.isFinite(v) && v > 0 ? v : undefined;
+  if (typeof v === "string") { const m = v.replace(/\u00a0/g, " ").match(/(\d[\d ,.]*)\s*(k(?![a-zåäö])|tkr|tusen)?/i); if (!m) return undefined; const raw = m[1]!.trim(); const n = /^\d+[,.]\d{1,2}$/.test(raw) ? Number(raw.replace(",", ".")) : Number(raw.replace(/[ ,]/g, "").replace(/\.(?=\d{3}\b)/g, "")); return Number.isFinite(n) && n > 0 ? (m[2] ? n * 1000 : n) : undefined; }
+  if (v && typeof v === "object" && !Array.isArray(v)) {
+    const o = v as Record<string, unknown>;
+    const key = Object.keys(o).find((k) => /base|salary|monthly|amount|pay|lön|grund|value|month/i.test(k) && moneyValue(o[k]) !== undefined);
+    if (key) return moneyValue(o[key]);
+    const nums = Object.values(o).map(moneyValue).filter((x): x is number => x !== undefined && x >= 1000);
+    return nums.length === 1 ? nums[0] : undefined;
+  }
+  return undefined;
+}
 export function normaliseSlot(id: string, v: unknown): unknown {
+  if (MONEY.has(id)) return moneyValue(v);
   const t = typeof v === "string" ? v.trim().toLowerCase() : v;
   if (typeof t !== "string") return v;
   if (id === "path") return /^a$|offer|new job|interview|erbjudande|nytt jobb|intervju|rekryter/.test(t) ? "A" : /^b$|current|raise|review|now|existing|nuvarande|löneöversyn|lönesamtal|höjning|befintlig/.test(t) ? "B" : undefined;
