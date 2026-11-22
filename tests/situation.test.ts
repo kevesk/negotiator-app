@@ -50,3 +50,18 @@ describe("situation guidance in the turn", () => {
     expect(m.calls.find((c) => c.purpose === "reply")!.system).not.toContain("Situation guidance");
   });
 });
+
+describe("the user's own figures", () => {
+  it("repeating a walk-away the user gave is not blocked before the numbers stage", async () => {
+    const s = newState("en"); setSlot(s, "path", "A", "user"); setSlot(s, "a_phase", "offer_received", "user"); setSlot(s, "walk_away", 60000, "user");
+    const m: ChatModel = { async complete(req) { return req.purpose === "extract" ? "{}" : "Your walk-away of 60 000 stays fixed. What is the role title?"; } };
+    const r = await runTurn({ model: m }, s, "Which package should I pick?");
+    expect(r.usedFallback).toBe(false); expect(r.findings.map((f) => f.rule)).not.toContain("H7");
+  });
+  it("a walk-away figure the user never gave is still blocked", async () => {
+    const s = newState("en"); setSlot(s, "path", "A", "user"); setSlot(s, "a_phase", "offer_received", "user");
+    const m: ChatModel = { async complete(req) { return req.purpose === "extract" ? "{}" : "Set your walk-away at 61 000. What is the role title?"; } };
+    const r = await runTurn({ model: m }, s, "Which package should I pick?");
+    expect(r.usedFallback).toBe(true);
+  });
+});

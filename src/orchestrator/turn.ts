@@ -34,6 +34,8 @@ export interface TurnResult {
   /** True when this reply is the first final brief (the app then shows copy, PDF and the usefulness question). */
   isBrief: boolean;
   findings: Finding[]; usedFallback: boolean; retrieved: Retrieved[];
+  /** The situation notes given in full this turn (see Retrieval-Design). */
+  guides: { note: string; title: string; text: string }[];
   /** Test diagnostics only: the draft and the errors when the reply was replaced by the fallback. Never sent to the browser. */
   rejected?: { draft: string; errors: string[] };
 }
@@ -116,7 +118,7 @@ export async function runTurn(deps: TurnDeps, prev: SessionState, message: strin
 
   // 7. pre-send checks: revise once, then send the safest version
   const sources = [...s.userTexts, ...r.items.map((i) => i.text), ...guides.map((g) => g.text), JSON.stringify(s.outputs), ...Object.values(s.slots).filter((v) => !v.stale).map((v) => JSON.stringify(v.value))];
-  const ctx = { stage: plan.stage, sources, numbersGateOpen: numbersGateOpen(s), userNumbers: [...allowedValues(s.userTexts)] };
+  const ctx = { stage: plan.stage, sources, numbersGateOpen: numbersGateOpen(s), userNumbers: [...allowedValues([...s.userTexts, ...Object.values(s.slots).filter((v) => v.source === "user" && !v.stale).map((v) => JSON.stringify(v.value))])] };
   let check = preSend(draft, ctx); let usedFallback = false; let rejected: TurnResult["rejected"];
   if (!check.ok) {
     const fix = check.findings.filter((f) => f.severity === "error").map((f) => `${f.rule}: ${f.detail}`).join("; ");
@@ -153,5 +155,5 @@ export async function runTurn(deps: TurnDeps, prev: SessionState, message: strin
 
   // 8. record the exchange
   s.messages.push({ role: "user", content: message }, { role: "assistant", content: draft });
-  return { reply: draft, state: s, plan, sidebar: sidebarStep(plan.stage), next, suggestions, isBrief: plan.stage === "brief" && !usedFallback && !prev.outputs.brief, rejected, findings: check.findings, usedFallback, retrieved: r.items };
+  return { reply: draft, state: s, plan, sidebar: sidebarStep(plan.stage), next, suggestions, isBrief: plan.stage === "brief" && !usedFallback && !prev.outputs.brief, rejected, guides, findings: check.findings, usedFallback, retrieved: r.items };
 }

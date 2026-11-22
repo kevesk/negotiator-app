@@ -81,8 +81,8 @@ export function prepareState(setup: Setup): SessionState {
 export const JUDGE_SYSTEM = `You grade one reply from a salary-negotiation coaching chatbot against a written test case. Be strict and literal. For every "must" item decide whether the reply does it; for every "must not" item decide whether the reply avoids it (pass = avoided). Judge only what the reply text shows. An item that is conditional (it starts with 'if' or contains 'if it was not yet given') passes when its condition does not apply. A short reason of one line per item, with no double quote characters inside it (use single quotes).
 Output ONLY one JSON object: {"must":[{"pass":true|false,"reason":"..."}],"must_not":[{"pass":true|false,"reason":"..."}]} with exactly one entry per item, in the order given.`;
 
-export async function judgeReply(model: ChatModel, c: EvalCase, setup: Setup, reply: string): Promise<NonNullable<RunResult["judge"]>> {
-  const user = [`Test: ${c.id} ${c.name}`, `Setup: ${c.setup || "(fresh session)"}`, `User message: ${setup.message}`, "", "Reply to grade:", reply, "", "MUST:", ...c.must.map((m, i) => `${i + 1}. ${m}`), "", "MUST NOT:", ...c.mustNot.map((m, i) => `${i + 1}. ${m}`)].join("\n");
+export async function judgeReply(model: ChatModel, c: EvalCase, setup: Setup, reply: string, knowledge = ""): Promise<NonNullable<RunResult["judge"]>> {
+  const user = [`Test: ${c.id} ${c.name}`, `Setup: ${c.setup || "(fresh session)"}`, `User message: ${setup.message}`, "", ...(knowledge ? ["Knowledge-base text the coach was given this turn (a detail that appears here is from the knowledge base, not from memory):", knowledge, ""] : []), "Reply to grade:", reply, "", "MUST:", ...c.must.map((m, i) => `${i + 1}. ${m}`), "", "MUST NOT:", ...c.mustNot.map((m, i) => `${i + 1}. ${m}`)].join("\n");
   try {
     const ask = async () => parseJson(await model.complete({ purpose: "critic", system: JUDGE_SYSTEM, messages: [{ role: "user", content: user }] }));
     let j = await ask();
@@ -112,7 +112,7 @@ export async function runCase(c: EvalCase, run: number, deps: CaseDeps, setupCac
     const researcher = async () => (setup.researcher && setup.researcher !== "none" ? { range: setup.researcher as MarketRange, research: stubResearch(setup.researcher as MarketRange) } : { range: null });
     const r = await runTurn({ model: deps.model, researcher, today: deps.today, allowDraft: true }, s, setup.message);
     const rule = ruleChecks(r);
-    const judge = c.judge || !c.human ? await judgeReply(deps.judge ?? deps.model, c, setup, r.reply) : undefined;
+    const judge = c.judge || !c.human ? await judgeReply(deps.judge ?? deps.model, c, setup, r.reply, [...(r.guides ?? []).map((g) => g.text), ...r.retrieved.map((i) => `${i.heading}: ${i.text}`)].join("\n").slice(0, 8000)) : undefined;
     if (c.human) notes.push("needs a human reading");
     if (c.setup.toLowerCase().startsWith("after ")) notes.push("this setup follows another case; it ran from a fresh state with the setup text only");
     return { caseId: c.id, run, reply: r.reply, usedFallback: r.usedFallback, rule, judge, needsHuman: c.human, pass: rule.ok && (judge ? judge.ok : true), notes };
