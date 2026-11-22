@@ -165,7 +165,13 @@ export async function runTurn(deps: TurnDeps, prev: SessionState, message: strin
     raw = await deps.model.complete({ purpose: "rewrite", system, cachePrefix, messages: [...messages, { role: "assistant", content: raw }, { role: "user", content: `Rewrite your last reply so it fixes this and changes nothing else: ${fix}. Output only the new reply, followed by the suggestions block.` }] });
     ({ body: draft, suggestions: offered } = splitTrailer(raw));
     check = preSend(draft, ctx);
-    if (!check.ok) { rejected = { draft, errors: check.findings.filter((f) => f.severity === "error").map((f) => `${f.rule}: ${f.detail}`) }; s.failures.push(...check.findings.filter((f) => f.severity === "error").map((f) => f.rule)); draft = FALLBACK[s.language]; offered = []; usedFallback = true; }
+    const errs = check.findings.filter((f) => f.severity === "error");
+    if (!check.ok && plan.stage === "brief" && errs.every((f) => f.rule === "H2")) {
+      // a finished brief is not thrown away because a figure in it has no source: it is kept and the figures are named openly (a live test lost a whole brief this way)
+      s.failures.push(...errs.map((f) => f.rule));
+      const figs = [...new Set(errs.flatMap((f) => (f.detail.split(": ")[1] ?? "").split(", ")).map((x) => x.trim()).filter(Boolean))].slice(0, 6).join(", ");
+      draft += s.language === "sv" ? `\n\n**Öppna punkter i det här underlaget:** dessa siffror kunde inte kopplas till dina uppgifter eller beräkningarna: ${figs}. Kontrollera dem innan du förlitar dig på dem.` : `\n\n**Open points in this brief:** these figures could not be tied to your inputs or the calculations: ${figs}. Check them before you rely on them.`;
+    } else if (!check.ok) { rejected = { draft, errors: errs.map((f) => `${f.rule}: ${f.detail}`) }; s.failures.push(...errs.map((f) => f.rule)); draft = FALLBACK[s.language]; offered = []; usedFallback = true; }
   }
   // the Critic reviews the final brief once, in its own context; must-fix and should-fix items are fixed once, then anything left is stated openly
   if (plan.stage === "brief" && !usedFallback && deps.critic !== false && !prev.outputs.brief) {

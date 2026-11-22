@@ -23,7 +23,7 @@ export async function handleChat(body: ChatRequest, model: ChatModel | null, tod
   try {
     const r = await runTurn({ model, researcher, allowDraft: process.env.RELEASE_MODE !== "1", today }, state, body.message, { skip: body.skip === true });
     if (r.isBrief) recordEvent({ event: "brief_produced" }, counters);
-    return { status: 200, body: { reply: r.reply, state: r.state, sidebar: r.sidebar, next: r.next, suggestions: r.suggestions, stage: r.plan.stage, usedFallback: r.usedFallback, brief: r.isBrief, finished: r.finished, canSkip: !r.finished && (r.plan.ask.length > 0 || !!r.plan.runTool) } };
+    return { status: 200, body: { reply: r.reply, state: r.state, sidebar: r.sidebar, next: r.next, suggestions: r.suggestions, stage: r.plan.stage, usedFallback: r.usedFallback, why: r.usedFallback ? r.rejected?.errors.map((e) => e.split(":")[0]) : undefined, brief: r.isBrief, finished: r.finished, canSkip: !r.finished && (r.plan.ask.length > 0 || !!r.plan.runTool) } };
   } catch {
     recordEvent(parseEvent({ event: "error", type: "model_error" }), counters); // a count only, never content
     return { status: 502, body: { error: "model_error" } };
