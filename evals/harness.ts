@@ -55,7 +55,7 @@ const DEFAULT_RANGE: MarketRange = { p25: 52000, median: 58000, p75: 64000, conf
 export function withProvenance(r: MarketRange): MarketRange {
   return { ...r, sources: r.sources?.length ? r.sources : ["Test source (stub)"], valid_as_of: r.valid_as_of ?? "2026-11-22" };
 }
-function stubResearch(range: MarketRange) { return { stub: true, range, confidence: { level: range.confidence ?? "medium", reasons: ["Test data supplied by the case setup, not a live source"] } }; }
+function stubResearch(range: MarketRange) { return { stub: true, range, confidence: { level: range.confidence ?? "medium", reasons: [range.confidence === "low" ? (range.averageOnly ? "Only an average was found; no range is published by the source" : "Thin data: very few data points, so the range is rough") : "Few independent sources; the figures are from the case setup"] } }; }
 export function prepareState(setup: Setup): SessionState {
   const s = newState(setup.language);
   for (const [id, v] of Object.entries(setup.slots)) setSlot(s, id, v.value, "user", { unit: v.unit });
@@ -93,9 +93,9 @@ export async function judgeReply(model: ChatModel, c: EvalCase, setup: Setup, re
 }
 
 /** Code checks on every reply: the hard rules that code can test, and no fallback message. */
-export function ruleChecks(r: Pick<TurnResult, "findings" | "usedFallback">): { ok: boolean; failures: string[] } {
+export function ruleChecks(r: Pick<TurnResult, "findings" | "usedFallback" | "rejected">): { ok: boolean; failures: string[] } {
   const failures = r.findings.filter((f) => f.severity === "error").map((f) => `${f.rule}: ${f.detail}`);
-  if (r.usedFallback) failures.push("fallback: the reply failed the pre-send checks twice");
+  if (r.usedFallback) failures.push(`fallback: the reply failed the pre-send checks twice. Errors: ${(r as { rejected?: { errors: string[] } }).rejected?.errors.join("; ") ?? "?"}. Rejected draft: ${((r as { rejected?: { draft: string } }).rejected?.draft ?? "").replace(/\s+/g, " ").slice(0, 900)}`);
   return { ok: failures.length === 0, failures };
 }
 

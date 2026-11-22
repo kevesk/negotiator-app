@@ -730,7 +730,7 @@
    "message": "They offer 40 000 and options worth 'a lot'.",
    "must": [
     "shows equity separately and uncertain",
-    "asks about vesting, strike price and exit terms",
+    "names the terms that decide the value (vesting, strike price, exit terms) and says to ask the employer for them",
     "keeps the walk-away on guaranteed pay",
     "says it cannot say whether a tax exception applies"
    ],

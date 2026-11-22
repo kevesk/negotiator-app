@@ -33,6 +33,8 @@ export interface TurnResult {
   /** True when this reply is the first final brief (the app then shows copy, PDF and the usefulness question). */
   isBrief: boolean;
   findings: Finding[]; usedFallback: boolean; retrieved: Retrieved[];
+  /** Test diagnostics only: the draft and the errors when the reply was replaced by the fallback. Never sent to the browser. */
+  rejected?: { draft: string; errors: string[] };
 }
 
 const MAX_NOTES_SEEN = 40;
@@ -107,13 +109,13 @@ export async function runTurn(deps: TurnDeps, prev: SessionState, message: strin
   // 7. pre-send checks: revise once, then send the safest version
   const sources = [...s.userTexts, ...r.items.map((i) => i.text), JSON.stringify(s.outputs), ...Object.values(s.slots).filter((v) => !v.stale).map((v) => JSON.stringify(v.value))];
   const ctx = { stage: plan.stage, sources, numbersGateOpen: numbersGateOpen(s), userNumbers: [...allowedValues(s.userTexts)] };
-  let check = preSend(draft, ctx); let usedFallback = false;
+  let check = preSend(draft, ctx); let usedFallback = false; let rejected: TurnResult["rejected"];
   if (!check.ok) {
     const fix = check.findings.filter((f) => f.severity === "error").map((f) => `${f.rule}: ${f.detail}`).join("; ");
     raw = await deps.model.complete({ purpose: "rewrite", system, messages: [...messages, { role: "assistant", content: raw }, { role: "user", content: `Rewrite your last reply so it fixes this and changes nothing else: ${fix}. Output only the new reply, followed by the suggestions block.` }] });
     ({ body: draft, suggestions: offered } = splitTrailer(raw));
     check = preSend(draft, ctx);
-    if (!check.ok) { s.failures.push(...check.findings.filter((f) => f.severity === "error").map((f) => f.rule)); draft = FALLBACK[s.language]; offered = []; usedFallback = true; }
+    if (!check.ok) { rejected = { draft, errors: check.findings.filter((f) => f.severity === "error").map((f) => `${f.rule}: ${f.detail}`) }; s.failures.push(...check.findings.filter((f) => f.severity === "error").map((f) => f.rule)); draft = FALLBACK[s.language]; offered = []; usedFallback = true; }
   }
   // the Critic reviews the final brief once, in its own context; must-fix and should-fix items are fixed once, then anything left is stated openly
   if (plan.stage === "brief" && !usedFallback && deps.critic !== false && !prev.outputs.brief) {
@@ -143,5 +145,5 @@ export async function runTurn(deps: TurnDeps, prev: SessionState, message: strin
 
   // 8. record the exchange
   s.messages.push({ role: "user", content: message }, { role: "assistant", content: draft });
-  return { reply: draft, state: s, plan, sidebar: sidebarStep(plan.stage), next, suggestions, isBrief: plan.stage === "brief" && !usedFallback && !prev.outputs.brief, findings: check.findings, usedFallback, retrieved: r.items };
+  return { reply: draft, state: s, plan, sidebar: sidebarStep(plan.stage), next, suggestions, isBrief: plan.stage === "brief" && !usedFallback && !prev.outputs.brief, rejected, findings: check.findings, usedFallback, retrieved: r.items };
 }
