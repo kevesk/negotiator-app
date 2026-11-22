@@ -118,17 +118,21 @@ export async function runCase(c: EvalCase, run: number, deps: CaseDeps, setupCac
   }
 }
 
-export interface Gate { pass: boolean; criticalFailures: string[]; majorFailures: string[]; minorFailures: string[]; pendingHuman: string[]; errors: string[] }
-/** Release gate (Eval-Method): all critical runs pass; no major case fails on both of its runs; minor failures and human reviews are reported. */
+export interface Gate { pass: boolean; criticalFailures: string[]; majorFailures: string[]; minorFailures: string[]; pendingHuman: string[]; errors: string[]; allowedMisses: string[] }
+/** Release gate (Eval-Method, D105): a critical case may fail a run only on the judge's wording and only once in five runs; any failed code check, any fallback reply or a second miss blocks. Then: no major case fails on both of its runs; minor failures and human reviews are reported. */
 export function evaluateGate(cases: EvalCase[], results: RunResult[]): Gate {
   const byCase = new Map<string, RunResult[]>(); for (const r of results) byCase.set(r.caseId, [...(byCase.get(r.caseId) ?? []), r]);
-  const g: Gate = { pass: true, criticalFailures: [], majorFailures: [], minorFailures: [], pendingHuman: [], errors: [] };
+  const g: Gate = { pass: true, criticalFailures: [], majorFailures: [], minorFailures: [], pendingHuman: [], errors: [], allowedMisses: [] };
   for (const c of cases) {
     const rs = byCase.get(c.id) ?? [];
     if (!rs.length) continue;
     if (rs.some((r) => r.error)) g.errors.push(c.id);
     const fails = rs.filter((r) => !r.pass).length;
-    if (c.severity === "critical" && fails > 0) g.criticalFailures.push(`${c.id} (${fails}/${rs.length})`);
+    if (c.severity === "critical" && fails > 0) {
+      const hard = rs.filter((r) => !r.pass && (!r.rule.ok || r.error)).length; const soft = fails - hard;
+      if (hard === 0 && rs.length >= 5 && soft <= 1) g.allowedMisses.push(`${c.id} (${soft}/${rs.length}, judge wording only)`);
+      else g.criticalFailures.push(`${c.id} (${fails}/${rs.length})`);
+    }
     if (c.severity === "major" && rs.length > 1 && fails === rs.length) g.majorFailures.push(c.id);
     if (c.severity === "major" && rs.length === 1 && fails === 1) g.majorFailures.push(`${c.id} (single run, re-run)`);
     if (c.severity === "minor" && fails > 0) g.minorFailures.push(c.id);
@@ -149,7 +153,7 @@ export function report(o: { date: string; model: string; promptVersion: string; 
   const L: string[] = [];
   L.push(`# Eval run ${o.date}`, "", `Model: ${o.model} · prompt version: ${o.promptVersion} · runs: ${o.results.length} · cases: ${new Set(o.results.map((r) => r.caseId)).size}`, "");
   L.push(`**Release gate: ${o.gate.pass && !o.stale.length ? "PASS" : "FAIL"}**`, "");
-  L.push(`- Critical failures: ${o.gate.criticalFailures.length ? o.gate.criticalFailures.join(", ") : "none"}`, `- Major failures (failed every run): ${o.gate.majorFailures.length ? o.gate.majorFailures.join(", ") : "none"}`, `- Minor failures: ${o.gate.minorFailures.length ? o.gate.minorFailures.join(", ") : "none"}`, `- Cases that could not run: ${o.gate.errors.length ? o.gate.errors.join(", ") : "none"}`, `- Notes past the review window: ${o.stale.length ? o.stale.join(", ") : "none"}`, `- Waiting for a human reading: ${o.gate.pendingHuman.length ? o.gate.pendingHuman.join(", ") : "none"}`, "");
+  L.push(`- Allowed misses (one judge-wording miss in five): ${o.gate.allowedMisses.length ? o.gate.allowedMisses.join(", ") : "none"}`, `- Critical failures: ${o.gate.criticalFailures.length ? o.gate.criticalFailures.join(", ") : "none"}`, `- Major failures (failed every run): ${o.gate.majorFailures.length ? o.gate.majorFailures.join(", ") : "none"}`, `- Minor failures: ${o.gate.minorFailures.length ? o.gate.minorFailures.join(", ") : "none"}`, `- Cases that could not run: ${o.gate.errors.length ? o.gate.errors.join(", ") : "none"}`, `- Notes past the review window: ${o.stale.length ? o.stale.join(", ") : "none"}`, `- Waiting for a human reading: ${o.gate.pendingHuman.length ? o.gate.pendingHuman.join(", ") : "none"}`, "");
   L.push("| Case | Severity | Runs | Passed |", "|---|---|---|---|");
   for (const c of o.cases) { const rs = o.results.filter((r) => r.caseId === c.id); if (rs.length) L.push(`| ${c.id} ${c.name} | ${c.severity} | ${rs.length} | ${rs.filter((r) => r.pass).length} |`); }
   const failed = o.results.filter((r) => !r.pass);
