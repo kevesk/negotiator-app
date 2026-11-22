@@ -4,5 +4,5 @@ import path from "node:path";
 export default defineConfig({
   oxc: { jsx: { runtime: "automatic" } },
   resolve: { alias: { "@": path.resolve(__dirname, "src") } },
-  test: { include: ["evals/run.eval.ts"], testTimeout: 3_600_000, hookTimeout: 3_600_000 },
+  test: { include: [process.env.EVAL_FILE ?? "evals/run.eval.ts"], testTimeout: 3_600_000, hookTimeout: 3_600_000 },
 });

@@ -18,7 +18,8 @@
     "build-researcher": "node scripts/build-researcher.mjs",
     "build-templates": "node scripts/build-templates.mjs",
     "build-evals": "node scripts/build-evals.mjs",
-    "evals": "vitest run --config vitest.evals.config.ts"
+    "evals": "vitest run --config vitest.evals.config.ts",
+    "retrieval-check": "EVAL_FILE=evals/retrieval-check.eval.ts vitest run --config vitest.evals.config.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.12.0",
