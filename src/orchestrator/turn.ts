@@ -92,7 +92,8 @@ export async function runTurn(deps: TurnDeps, prev: SessionState, message: strin
   const system = [
     buildSystemPrompt({ lang: s.language, path: slotValue(s, "path"), stage: plan.stage, modifiers: s.modifiers }),
     "", COACH_STYLE, "", OUTPUT_FORMAT, "", `Stage goal: ${STAGE_GOAL[plan.stage]}`,
-    plan.ask.length ? `Ask for these now, and nothing else (at most two questions):\n${asks}` : "Do not ask for anything new: present the results below and end with a next step.",
+    "First respond to what the user just raised. If the retrieved notes describe a move for that situation (questions to ask, an exercise to offer, a check to make, a point to explain), make that move first; its questions come before the facts listed below.",
+    plan.ask.length ? `Next facts to collect (ask for these now if your reply has room; at most two questions in total, and anything left waits for a later turn):\n${asks}` : "Do not ask for new facts: present the results below and end with a next step.",
     confirm.length ? `\nThe user pasted a session summary. Briefly confirm these time-sensitive items before relying on them: ${confirm.join(", ")}.` : "",
     "", "What you know so far:", stateSummary(s),
     Object.keys(s.outputs).length ? `\nTool results (the only source for computed figures):\n${JSON.stringify(s.outputs)}` : "",

@@ -27,6 +27,8 @@ describe("H2: figures need a source", () => {
 
 describe("H5 questions, H7 gates, H10 next step", () => {
   it("rejects three questions", () => expect(rules("Where do you work? What do you earn? How long? ")).toContain("H5"));
+  it("does not count questions inside quoted example lines", () => expect(rules("You could say: ”Vad är lönespannet?” or \"How is the range set?\" Which one fits you?")).not.toContain("H5"));
+  it("does not count questions in a blockquote", () => expect(rules("Try this:\n> Can we look at the range?\n> What would make 62 000 possible?\nWhich fits?")).not.toContain("H5"));
   it("allows questions inside script examples", () => expect(rules('Say: "Can we talk about pay? Is Friday ok? Or Monday?" Does that work for you?', ctx({ stage: "scripts" }))).toEqual([]));
   it("rejects a target figure before the gate is open", () => expect(rules("Your target should be 52 000 kr. Agree?", ctx({ numbersGateOpen: false }))).toContain("H7"));
   it("allows a target figure once the gate is open", () => expect(rules("Your target is 52 000 kr. Agree?")).toEqual([]));

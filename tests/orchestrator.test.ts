@@ -116,7 +116,7 @@ describe("turn loop", () => {
     const prev = newState("en"); const m = scripted("{}", ["Is this about a job offer, or a salary discussion at the job you have now?"]);
     const r = await runTurn({ model: m }, prev, "Hi, I want help with my salary");
     expect(r.plan).toMatchObject({ stage: "route", ask: ["path"] }); expect(r.usedFallback).toBe(false); expect(prev.turn).toBe(0); expect(r.state.turn).toBe(1); expect(r.sidebar).toBe("Situation");
-    expect(m.calls.find((c) => c.purpose === "reply")!.system).toContain("Ask for these now");
+    expect(m.calls.find((c) => c.purpose === "reply")!.system).toContain("Next facts to collect");
   });
   it("extracts the path from the message and moves on", async () => {
     const m = scripted('{"slots":{"path":{"value":"A"},"a_phase":{"value":"offer_received"}}}', ["Congratulations on the offer. What is the role title, and how many years of relevant experience do you have?"]);
