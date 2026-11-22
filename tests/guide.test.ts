@@ -20,9 +20,14 @@ describe("suggestions", () => {
   it("splits the trailer from the reply", () => {
     const r = splitTrailer("Hello.\n\nWhat next?\n<suggestions>\n- **A** one\n- Two\n3. Three\n</suggestions>"); expect(r.body).toBe("Hello.\n\nWhat next?"); expect(r.suggestions).toEqual(["A one", "Two", "Three"]);
   });
-  it("always returns exactly three, filling with safe defaults", () => {
-    const s = finalSuggestions(["Only one"], "market", "en", () => true, ""); expect(s).toHaveLength(3); expect(s[0]).toBe("Only one");
-    expect(finalSuggestions([], "route", "sv", () => true, "")).toEqual(defaultSuggestions("route", "sv"));
+  it("only real answers: no padding, none for open questions (D112)", () => {
+    expect(finalSuggestions(["Only one"], "market", "en", () => true, "")).toEqual(["Only one"]);
+    expect(finalSuggestions([], "intake", "en", () => true, "")).toEqual([]);
+    expect(finalSuggestions([], "route", "sv", () => true, "")).toEqual(defaultSuggestions("route", "sv")); // the opening has fixed answers
+  });
+  it("drops answers that only announce an answer, or ask for another search", () => {
+    expect(finalSuggestions(["I'll write my role and salary in a message", "I have results to show, I'll show them now", "Search again", "Yes, salary only"], "intake", "en", () => true, "")).toEqual(["Yes, salary only"]);
+    expect(finalSuggestions(["Jag skriver det i ett meddelande", "Sök igen", "Ett helt paket"], "interests", "sv", () => true, "")).toEqual(["Ett helt paket"]);
   });
   it("drops invented figures and anything that fails the checks", () => {
     expect(finalSuggestions(["My target is 62 000 SEK", "Maybe"], "market", "en", () => true, "I earn 50 000")).not.toContain("My target is 62 000 SEK");
