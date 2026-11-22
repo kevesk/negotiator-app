@@ -12,7 +12,7 @@ describe("markdown", () => {
     const h = html("This is **important** and **very, very** key.\n\n- one **a**\n- two\n\nStray ** and *half"); expect(h).toContain("<strong>important</strong>"); expect(h).toContain("<li>one <strong>a</strong></li>"); expect(h).not.toContain("*");
   });
   it("renders italics, numbered lists, headings and tables", () => {
-    const h = html("## Title\n\n1. first\n2. second\n\n| A | B |\n|---|---|\n| 1 | 2 |\n\nan *emphasised* word"); expect(h).toContain("<strong>Title</strong>"); expect(h).toContain("<ol>"); expect(h).toContain("<th>A</th>"); expect(h).toContain("<em>emphasised</em>");
+    const h = html("## Title\n\n1. first\n2. second\n\n| A | B |\n|---|---|\n| 1 | 2 |\n\nan *emphasised* word"); expect(h).toContain("<h3>Title</h3>"); expect(h).toContain("<ol>"); expect(h).toContain('<th scope="col">A</th>'); expect(h).toContain('<th scope="row">1</th>'); expect(h).toContain("<em>emphasised</em>");
   });
   it("never injects HTML", () => expect(html("<script>x</script> **b**")).not.toContain("<script>"));
 });
@@ -46,7 +46,7 @@ describe("turn and endpoint", () => {
     expect(b.suggestions).toHaveLength(3); expect(b.next).toBeTruthy(); expect(b.reply).not.toContain("<");
   });
 });
-describe("checklists", () => { it("shows task-list items as checkboxes", () => { const h = html("- [ ] Print this\n- [x] Done"); expect(h).toContain("☐ Print this"); expect(h).toContain("☑ Done"); }); });
+describe("checklists", () => { it("shows task-list items as checkboxes", () => { const h = html("- [ ] Print this\n- [x] Done"); expect(h).toContain('<ul class="checks">'); expect(h).toContain('<li data-box="open">Print this</li>'); expect(h).toContain('<li data-box="done">Done</li>'); }); });
 
 describe("coach style rules come from the vault", () => {
   it("one rule per line, generated from Coach-Persona-and-Rules", async () => {
@@ -54,5 +54,32 @@ describe("coach style rules come from the vault", () => {
     const gen = await import("@/agents/hard-rules.generated");
     expect(COACH_STYLE).toBe(gen.COACH_STYLE); expect(COACH_STYLE.split("\n").length).toBeGreaterThanOrEqual(14);
     expect(COACH_STYLE).toContain("*Based on:"); expect(COACH_STYLE).not.toMatch(/\*\*[^*]+\.\*\*/); // labels stay in the vault
+  });
+});
+
+describe("what the reader sees (D113)", () => {
+  it("hides source tags, keeps assumptions as a label, and drops an empty tag column", async () => {
+    const { cleanForReader, ASSUMED } = await import("@/app/reader");
+    expect(cleanForReader("Target 50 000 kr [user] and anchor 53 500 [computed] [assumed].", "en")).toBe(`Target 50 000 kr and anchor 53 500 ${ASSUMED}.`);
+    expect(cleanForReader("| Base | 660 000 | [user] / [computed] |", "en")).toBe("| Base | 660 000 | |");
+    expect(cleanForReader("Pension about 38 496 [computed, estimate]", "en")).toBe("Pension about 38 496");
+    const h = html(cleanForReader("| Part | Amount | Tag |\n|---|---|---|\n| Base | 660 000 | [user] |", "en"));
+    expect(h).not.toContain("Tag"); expect(h).not.toContain("[user]");
+  });
+  it("writes the Based-on line in Swedish for Swedish users", async () => {
+    const { cleanForReader } = await import("@/app/reader");
+    expect(cleanForReader("*Based on: BATNA, ankring*", "sv")).toBe("*Baseras på: BATNA, ankring*");
+    expect(cleanForReader("*Based on: BATNA*", "en")).toBe("*Based on: BATNA*");
+  });
+});
+describe("deal line", () => {
+  it("places walk-away, target and first offer in order and staggers labels that would touch", async () => {
+    const { layout } = await import("@/app/deal-line");
+    const L = { title: "", empty: "", walkAway: "W", target: "T", firstOffer: "F", market: "M", current: "C", offer: "O", landing: "" };
+    const r = layout({ walkAway: 46000, target: 50000, firstOffer: 53500, current: 44000, low: 35200, high: 53100 }, L, 34);
+    expect(r.marks.map((m) => m.key)).toEqual(["current", "walk", "target", "first"]);
+    expect(r.marks.every((m, i, a) => i === 0 || m.x > a[i - 1]!.x)).toBe(true);
+    const sameRow = r.marks.filter((m) => m.row === 0); expect(sameRow.every((m, i, a) => i === 0 || m.x - a[i - 1]!.x > 34)).toBe(true);
+    expect(layout({}, L).empty).toBe(true);
   });
 });
