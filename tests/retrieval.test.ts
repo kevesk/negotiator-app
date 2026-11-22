@@ -27,7 +27,13 @@ describe("hard filter", () => {
     const byName = new Map(INDEX.notes.map((n) => [n.name, n]));
     for (const agent of agents) for (const path of ["A", "B"] as const) for (const stage of stages) for (const q of queries) {
       const st = dev({ agent, path, stage, modifiers: ["competing_offer"] });
-      for (const it of retrieve(q, st).items) expect(passesFilter(byName.get(it.note)!, st), `${agent}/${path}/${stage}/${q}: ${it.note}`).toBe(true);
+      const hits = aliasMatches(q);
+      for (const it of retrieve(q, st).items) {
+        const n = byName.get(it.note)!;
+        // a note passes the filter, or the message named it by alias and it passes with the stage and modifier gates waived
+        const ok = passesFilter(n, st) || (hits.has(n.name) && passesFilter(n, { ...st, modifiers: n.modifiers, stage: n.stages[0] ?? st.stage }));
+        expect(ok, `${agent}/${path}/${stage}/${q}: ${it.note}`).toBe(true);
+      }
     }
   });
   it("never returns roleplay personas or scenarios to the coach", () => {
@@ -82,5 +88,16 @@ describe("special handling", () => {
     const never = INDEX.notes.find((n) => n.cite === "never")!;
     expect(findCiteNeverLeaks(`As discussed in ${never.title}, you should...`)).toContain(never.name);
     expect(findCiteNeverLeaks("Start by writing down your walk-away number.")).toEqual([]);
+  });
+});
+
+describe("alias waiver covers the stage gate", () => {
+  it("a note named by its alias is found even at a stage it is not listed for", () => {
+    const r = retrieve("Gäller lönetransparensdirektivet redan?", { agent: "coach", path: "A", stage: "route", modifiers: [], allowDraft: true, today: "2026-11-22" });
+    expect(r.items.map((i) => i.note)).toContain("Pay-Transparency-Status");
+  });
+  it("without the alias the note stays out of the route stage", () => {
+    const r = retrieve("Is this about a job offer?", { agent: "coach", path: "A", stage: "route", modifiers: [], allowDraft: true, today: "2026-11-22" });
+    expect(r.items.map((i) => i.note)).not.toContain("Pay-Transparency-Status");
   });
 });

@@ -31,6 +31,6 @@ it.skipIf(!key)("run the eval cases and apply the release gate", async () => {
   fs.mkdirSync("evals/results", { recursive: true });
   fs.writeFileSync(`evals/results/eval-${today}-${scope}.md`, md); fs.writeFileSync(`evals/results/eval-${today}-${scope}.json`, JSON.stringify({ gate, stale, results }, null, 1));
   if (process.env.GITHUB_STEP_SUMMARY) fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, md.split("\n## ")[0] + "\n");
-  console.log(md.split("\n## ")[0]);
+  console.log(md); // the whole report, so the failures can be read in the job log
   expect(gate.criticalFailures).toEqual([]); // a single critical failure blocks the release
 }, 3_600_000);

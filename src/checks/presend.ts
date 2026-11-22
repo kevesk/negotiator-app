@@ -17,7 +17,14 @@ export interface ReplyContext {
 export interface PreSendResult { ok: boolean; findings: Finding[] }
 
 const GATE_WORDS = /(target|anchor|walk[- ]?away|reservation|landing|mållön|ankare|ankarsiffra|golv|lägsta acceptabla)[^.\n?]{0,50}?\d[\d  .,]{3,}/gi;
-const PROMISE = /\b(i guarantee|guaranteed|i promise|they (will|'ll) (definitely |certainly )?(accept|agree|say yes)|i know (their|the employer'?s|the company'?s) budget|their budget is|jag garanterar|jag lovar|de kommer (säkert |definitivt )?(att )?(acceptera|säga ja)|jag vet (deras|arbetsgivarens|företagets) budget|deras budget är)\b/i;
+const PROMISE = /\b(i guarantee|(?:is|are|be|it's|that's)\s+guaranteed\b|guaranteed\s+(?:to\b|success|result|outcome|raise|increase|yes|win)|i promise|they (will|'ll) (definitely |certainly )?(accept|agree|say yes)|i know (their|the employer'?s|the company'?s) budget|their budget is|jag garanterar|jag lovar|de kommer (säkert |definitivt )?(att )?(acceptera|säga ja)|jag vet (deras|arbetsgivarens|företagets) budget|deras budget är)\b/i;
+/** A promise match only counts when no negation or doubt sits just before it ("cannot say whether their budget is flexible" is honest). */
+const DOUBT = /\b(?:not|n't|never|cannot|can't|whether|if|what|how|unknown|unsure|unclear|no one|nobody|inte|kan inte|om|vad|hur)\b/i;
+export function promises(text: string): boolean {
+  const re = new RegExp(PROMISE.source, "gi");
+  for (const m of text.matchAll(re)) { const before = text.slice(Math.max(0, (m.index ?? 0) - 45), m.index ?? 0); if (!DOUBT.test(before.split(/[.!?\n]/).pop() ?? "")) return true; }
+  return false;
+}
 const ID_REQUEST = /\b(share|provide|send|enter|give me|what is your|what's your|ange|skicka|dela|ge mig|vad är ditt|vad är din)\b[^.\n?]{0,60}\b(personnummer|personal (identity|id) number|social security( number)?|bank account|kontonummer|bankkonto|iban|card number|kortnummer)\b/i;
 const AUTHOR_COURSE = /\b(ntu|nanyang|(the|this|our|my) course|negotiation course|my (professor|lecturer|teacher|classmates?)|in class|class (exercise|case|results?)|slides?|lectures?|the author|who (built|wrote|created) (me|this)|my creator|kursen|kursmaterialet|föreläsningen|författaren|min (professor|lärare|kursare))\b/i;
 const UNPROFESSIONAL = /\b(haha+|hehe+|lol|lmao|rofl|just kidding)\b|\p{Extended_Pictographic}/iu;
@@ -57,7 +64,7 @@ export function preSend(reply: string, ctx: ReplyContext): PreSendResult {
   const last = text.trim().split(/\n\s*\n/).pop() ?? "";
   if (!/\?|next step|nästa steg|you can|du kan|want me to|vill du att jag|try |prova |today|idag|let me know|säg till/i.test(last)) add("H10", "flag", "reply may not end with a next step");
   // H12: no promises, no claims about the other side's budget
-  if (PROMISE.test(text)) add("H12", "error", "promises an outcome or claims to know the counterpart's budget");
+  if (promises(text)) add("H12", "error", "promises an outcome or claims to know the counterpart's budget");
   // H13: never ask for ID or bank details
   const idm = ID_REQUEST.exec(text);
   if (idm && !/\b(never|don'?t|do not|no need|not need|inte|aldrig|behöver inte|ingen anledning)\b[^.\n]{0,40}$/i.test(text.slice(Math.max(0, idm.index - 40), idm.index + idm[0].length - 0).split(idm[1]!)[0]!)) add("H13", "error", "asks for identity or bank details");

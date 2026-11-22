@@ -24,7 +24,7 @@ export function anthropicModel(opts: { apiKey: string; model?: string }): ChatMo
   return {
     async complete(req: ModelRequest): Promise<string> {
       const res = await client.messages.create({
-        model, max_tokens: req.purpose === "extract" ? 700 : req.purpose === "script" ? 3000 : req.purpose === "critic" ? 1500 : 2500,
+        model, max_tokens: req.purpose === "extract" ? 700 : req.purpose === "script" ? 3000 : req.purpose === "critic" ? 3000 : 2500,
         system: req.system, messages: normaliseMessages(req.messages),
       });
       return res.content.map((b) => (b.type === "text" ? b.text : "")).join("").trim();
