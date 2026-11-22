@@ -69,3 +69,13 @@ describe("ending the session", () => {
     expect(r.status).toBe(200); expect((r.body as { finished: boolean }).finished).toBe(false); expect((r.body as { canSkip: boolean }).canSkip).toBe(true);
   });
 });
+
+describe("ending the session", () => {
+  it("a message that gives a fact never ends the session, even if the extraction says done", async () => {
+    const s = fill(newState("en"), { path: "B", role_title: "x", experience_years: 5, location: "Linköping", current_base: 45000 });
+    const r = await runTurn({ model: scripted('{"slots":{"first_offer":{"value":51500}},"done":true}', "Good.") }, s, "I'm happy with 51 500 kr as my first offer.");
+    expect(r.finished).toBe(false);
+    const r2 = await runTurn({ model: scripted('{"slots":{},"done":true}', "Good luck.") }, r.state, "Thanks, that's all.");
+    expect(r2.finished).toBe(true);
+  });
+});

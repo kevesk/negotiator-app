@@ -81,7 +81,8 @@ export async function runTurn(deps: TurnDeps, prev: SessionState, message: strin
   let skipped: string[] = [];
   const ext: Extraction = opts.skip ? { slots: {}, modifiers: [], situations: [], done: false } : await extractSlots(deps.model, s, message, plan.missing, { catalogue: SITUATION_CATALOGUE, isSituation });
   if (opts.skip) skipped = skipStep(s, plan); else applyExtraction(s, ext);
-  if (ext.done) s.finished = true;
+  // ending the session: only a plain "I'm done", never a message that also gives facts ("I'm happy with 51 500 kr as my first offer")
+  if (ext.done && (plan.stage === "brief" || !Object.keys(ext.slots).length)) s.finished = true;
   s.modifiers = detectModifiers(s);
   plan = workPlan(s);
 
