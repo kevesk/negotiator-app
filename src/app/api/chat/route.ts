@@ -3,7 +3,7 @@ import { handleChat } from "@/server/chat";
 import { guardChat } from "@/server/access";
 
 export const runtime = "nodejs";
-export const maxDuration = 300; // a scripts turn runs the script writer and then the coach reply in series; 60 s was not enough (needs Fluid compute on Hobby)
+export const maxDuration = 300; // a scripts turn runs the script writer and then the coach reply in series; 60 s was not enough
 
 export async function POST(req: Request): Promise<Response> {
   // access code and message caps come first, so a stranger or a runaway loop never reaches the paid model (D108)
