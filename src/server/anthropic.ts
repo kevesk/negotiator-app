@@ -38,7 +38,7 @@ export function systemBlocks(req: Pick<ModelRequest, "system" | "cachePrefix">):
  * a cheaper model does the small jobs (FAST_MODEL). Nothing the user types is logged here (D79).
  */
 export function anthropicModel(opts: { apiKey: string; model?: string; fastModel?: string }): ChatModel {
-  const client = new Anthropic({ apiKey: opts.apiKey, maxRetries: 2, timeout: 60_000 });
+  const client = new Anthropic({ apiKey: opts.apiKey, maxRetries: 2, timeout: 120_000 });
   const main = opts.model ?? DEFAULT_MODEL, fast = opts.fastModel ?? FAST_MODEL;
   return {
     async complete(req: ModelRequest): Promise<string> {
