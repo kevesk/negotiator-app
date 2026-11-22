@@ -44,7 +44,7 @@ export function gate(stage: Stage, s: SessionState): Gate {
 }
 const tierOf = (id: string, s: SessionState): number => { const t = SLOT_DEFS[id]?.tier; return typeof t === "number" ? t : t?.[pathOf(s) ?? "A"] ?? 2; };
 
-export type Tool = "researcher" | "numbers_engine" | "script_writer" | "offer_analyzer" | "evidence_builder";
+export type Tool = "researcher" | "numbers_engine" | "script_writer" | "offer_analyzer" | "evidence_builder" | "package_builder";
 export interface WorkPlan {
   stage: Stage;
   /** At most two slots to ask for now, in tier order (rule 5). */
@@ -54,11 +54,23 @@ export interface WorkPlan {
   /** A tool to run now: the stage's gate is met and its output does not exist yet. */
   runTool?: Tool;
 }
+/** True when the user negotiates a package, has given points for the items, and the packages are missing or were built from other points. */
+export function packagesNeedBuilding(s: SessionState): boolean {
+  if (String(slotValue(s, "negotiate_scope") ?? "").toLowerCase() !== "package") return false;
+  const w = slotValue<unknown>(s, "issue_weights"); if (w === undefined || w === SKIPPED) return false;
+  if (slotValue(s, "packages") === SKIPPED) return false;
+  const draft = s.outputs.package_draft as { basedOn?: string; failed?: boolean } | undefined;
+  return !draft || draft.basedOn !== JSON.stringify(w);
+}
 /** The first stage that is not finished decides what happens next. */
 export function workPlan(s: SessionState): WorkPlan {
   for (const stage of STAGE_ORDER) {
     const g = gate(stage, s);
     let missing = g.missing;
+    // a package plan: as soon as the user's points are in (or changed), the engine builds the packages that really differ
+    if (stage === "strategy" && packagesNeedBuilding(s)) return { stage, ask: [], missing: [], runTool: "package_builder" };
+    // the turn that builds the packages is the turn that shows them; the next step starts after the user has seen them
+    if (stage === "strategy" && (s.outputs.package_draft as { builtAt?: number; failed?: boolean } | undefined)?.builtAt === s.turn && !(s.outputs.package_draft as { failed?: boolean }).failed) return { stage, ask: [], missing: [] };
     // the user's own view (BATNA, target, walk-away) comes before any market figure
     if (g.met && def(stage).asks_first && !(STAGE_OUTPUT[stage]! in s.outputs)) missing = (def(stage).asks_first as string[]).filter((id) => !isSet(s, id));
     if (missing.length) {
@@ -108,7 +120,7 @@ export const STAGE_GOAL: Record<string, string> = {
   interests: "Find out what matters to the user and why (their interests), and whether they negotiate salary only or a whole package; give examples of other items (vacation days, flexible hours, remote days, pension, title, training, start date).",
   market: "Ask for the user's best alternative (BATNA), own target and walk-away first. Then show the one market search in plain words (typical pay, middle) with confidence, sources and date. No data found: say so once and move on.",
   numbers: "Present the numbers engine's results: target, walk-away and a separate first offer above the target with its reason; explain that deals often land between the first offer and the walk-away. The user chooses the first offer and sets the final numbers.",
-  strategy: "For a package: 100 points across the items, then at least two packages of equal value to the user (multiple equivalent offers). The employer's likely interests and limits, concessions, and answers to the likely tough questions.",
+  strategy: "For a package: 100 points across the items; the packages are then built by the package engine (tool results, package_draft), never written by you: at least two packages of equal value to the user that really differ, so the employer has a choice and the choice shows what it values most. The employer's likely interests and limits, concessions, and answers to the likely tough questions.",
   scripts: "Opening, ask, responses to objections and close, in the user's channel and language, using only approved numbers. Offer optional practice of one tough question, with a clear option to skip.",
   brief: "Produce the final prep brief, then ask plainly whether the user wants to save it as a PDF with the Save button.",
   debrief: "After the meeting: what happened and what to do next.",

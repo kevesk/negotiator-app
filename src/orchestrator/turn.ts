@@ -7,6 +7,7 @@ import type { Stage } from "@/retrieval/types";
 import { extractSlots, applyExtraction, type Extraction } from "./extract";
 import { fromSummary } from "./summary";
 import { runNumbersTool, type MarketRange } from "./tools";
+import { buildPackages, weightsFromSlot, draftConcessionPlan } from "@/engine";
 import { runOfferTool } from "./offer";
 import { runScriptTool } from "./scripts";
 import { reviewBrief, FINDING_LABEL, type CriticReport } from "@/agents/critic";
@@ -67,6 +68,7 @@ export function skipStep(s: SessionState, plan: WorkPlan): string[] {
 /** Retrieval stages are those in the notes' frontmatter; the interests stage reads the position notes. */
 const retrievalStage = (st: Stage): Stage => (st === "interests" ? "position" : st);
 
+const num = (v: unknown): number | undefined => (typeof v === "number" && Number.isFinite(v) ? v : undefined);
 export async function runTurn(deps: TurnDeps, prev: SessionState, message: string, opts: TurnOptions = {}): Promise<TurnResult> {
   const s = clone(prev);
   s.turn += 1; s.userTexts.push(message);
@@ -93,6 +95,11 @@ export async function runTurn(deps: TurnDeps, prev: SessionState, message: strin
   } else if (tool === "numbers_engine") {
     const r = runNumbersTool(s); if (!("needs" in r)) s.outputs.numbers = r;
     else if (r.needs.every((id) => slotValue(s, id) === SKIPPED)) s.outputs.numbers = { skipped: true, missing: r.needs }; // the user skipped a figure the engine needs
+  } else if (tool === "package_builder") {
+    const w = slotValue<unknown>(s, "issue_weights"); const basedOn = JSON.stringify(w);
+    const r = buildPackages({ weights: weightsFromSlot(w), target: num(slotValue(s, "own_target")), walkAway: num(slotValue(s, "walk_away")), lang: s.language });
+    if ("needs" in r) s.outputs.package_draft = { basedOn, failed: true, needs: r.needs, builtAt: s.turn }; // too few items to build a choice from
+    else { s.outputs.package_draft = { basedOn, builtAt: s.turn, ...r }; setSlot(s, "packages", r.packages.map((p) => ({ id: p.id, items: p.items.map((i) => i.text) })), "assumed"); }
   } else if (tool === "offer_analyzer" && !deps.tools?.offer_analyzer) {
     const r = runOfferTool(s, deps.today);
     if ("needs" in r && r.needs.every((id) => slotValue(s, id) === SKIPPED)) s.outputs.offer_analysis = { skipped: true, missing: r.needs };
@@ -105,6 +112,9 @@ export async function runTurn(deps: TurnDeps, prev: SessionState, message: strin
   }
   plan = workPlan(s);
   s.stage = plan.stage;
+  // the three concession steps from the user's own first offer, for the saved plan (the engine's plan is drawn for the default anchor)
+  { const f = num(slotValue(s, "first_offer")), t = num(slotValue(s, "own_target")), w = num(slotValue(s, "walk_away"));
+    if (f !== undefined && t !== undefined && w !== undefined && f > t && t >= w) s.outputs.concession_plan = { first: f, ...draftConcessionPlan(f, t, w) }; else delete s.outputs.concession_plan; }
 
   // 5. retrieve notes for the stage and active modifiers
   const query = [message, STAGE_GOAL[plan.stage], plan.ask.join(" ")].join(" ");
@@ -133,6 +143,8 @@ export async function runTurn(deps: TurnDeps, prev: SessionState, message: strin
     "", "What you know so far:", stateSummary(s),
     Object.keys(s.outputs).length ? `\nTool results (the only source for computed figures):\n${JSON.stringify(s.outputs)}` : "",
     s.outputs.offer_analysis ? "\nOffer analysis is ready (tool results, offer_analysis). Present it as a table of parts beside base pay and never as one total value: cash subtotal, then pension, vacation, benefits, equity and terms, each figure with its source tag right after it (never a tag column) and a note when it is an estimate. Say plainly which parts are unknown and what to ask the employer, name the red flags in plain words, and if offers_comparison exists, show that side-by-side table (one column per offer, the current job as a cash-only column) and note which has the highest guaranteed cash as a proposal only; if a comparison with the current job exists, propose the stronger alternative as the fallback option (BATNA) and ask the user to confirm before it is used." : "",
+    s.outputs.package_draft && !(s.outputs.package_draft as { failed?: boolean }).failed && plan.stage === "strategy" ? "\nThe packages are built (tool results, package_draft). Show them side by side in a table: one column per package, one row per item, then a row \"What it costs them\" and a row \"What their choice tells you\". Use the items and figures exactly as built and never change them. Say they are worth about the same to the user (only if sameValue is true; if it is false, say plainly that they are not exactly equal in value to the user and ask which item to adjust), and that the packages are made to be really different on purpose, so the employer has a real choice and the choice shows what they value most. Then ask two things: do the items fit what this employer can actually give, and which item the user could never give up. Do not show the points or scores." : "",
+    s.outputs.package_draft && (s.outputs.package_draft as { failed?: boolean }).failed && plan.stage === "strategy" ? "\nThe packages could not be built: fewer than two items have points. Ask for one more item that matters to the user and its points. Do not write packages yourself." : "",
     s.outputs.scripts && plan.stage === "scripts" ? "\nScripts are in the tool results (scripts). Present them for the user's channel and language, formatted like this script block, each with its goal, the text, the tone and what to say if they reply with the likely objection:\n" + SCRIPT_FORMAT + "\nIf provisional is true, list the assumptions. The user edits and sends them; never say anything was sent. If scripts.failed is true, say plainly that the wording could not be made safely and offer to try again. Use only the figures in the scripts." : "",
     plan.stage === "brief" ? "\nWrite the final prep brief now, in the user's language, using exactly this template. Fill every field from the facts and tool results; write unknown where a fact is missing; no placeholder may remain; keep the headings and their numbers; 700 to 1,100 words in total, concise and straight to the point, short sentences, no fluff, no filler, no repetition between sections; put the scripts from the tool results into section 5; end with the checklist, the assumptions, the line of concepts used and the preparation-support line.\n\n" + PREP_BRIEF_TEMPLATE + "\n\nPath additions: " + PREP_BRIEF_ADDITIONS : "",
     s.outputs.market_range && (s.outputs.market_range as { unavailable?: boolean }).unavailable ? "\nNo market data could be found. Say so plainly, once. The search runs only once: never offer to search again. Offer two ways forward: the user shares their own evidence (a job ad with a pay range, union statistics), or skips and goes on to the numbers." : "",
