@@ -17,7 +17,7 @@ export function normaliseMessages(msgs: ChatMessage[]): ChatMessage[] {
 /** The cheaper model for the small jobs: reading facts out of a message, and the eval harness's setup and grading (cost decision, 2026-11-22). */
 export const FAST_MODEL = "claude-haiku-5-5";
 const FAST_PURPOSES = new Set<ModelRequest["purpose"]>(["extract", "setup", "judge", "script"]);
-const MAX_TOKENS: Record<ModelRequest["purpose"], number> = { extract: 1600, setup: 3000, judge: 1500, reply: 2500, rewrite: 2500, script: 3000, critic: 3000 };
+const MAX_TOKENS: Record<ModelRequest["purpose"], number> = { extract: 1600, setup: 3000, judge: 1500, reply: 8000, rewrite: 8000, script: 6000, critic: 6000 };
 
 /** Which model a call uses: everything the user reads on the main model, the small jobs on the fast one. */
 export function modelFor(purpose: ModelRequest["purpose"], main: string, fast: string): string {
@@ -42,11 +42,14 @@ export function anthropicModel(opts: { apiKey: string; model?: string; fastModel
   const main = opts.model ?? DEFAULT_MODEL, fast = opts.fastModel ?? FAST_MODEL;
   return {
     async complete(req: ModelRequest): Promise<string> {
-      const res = await client.messages.create({
-        model: modelFor(req.purpose, main, fast), max_tokens: MAX_TOKENS[req.purpose] ?? 2500,
-        system: systemBlocks(req), messages: normaliseMessages(req.messages),
-      });
-      return res.content.map((b) => (b.type === "text" ? b.text : "")).join("").trim();
+      // A reply cut off by the token limit is never sent as if it were whole (a live test produced a brief that stopped mid-sentence):
+      // it is asked for once more with twice the room, and a second cut-off is an error the caller handles.
+      const base = MAX_TOKENS[req.purpose] ?? 2500;
+      for (const max_tokens of [base, base * 2]) {
+        const res = await client.messages.create({ model: modelFor(req.purpose, main, fast), max_tokens, system: systemBlocks(req), messages: normaliseMessages(req.messages) });
+        if (res.stop_reason !== "max_tokens") return res.content.map((b) => (b.type === "text" ? b.text : "")).join("").trim();
+      }
+      throw new Error("model output was cut off by the token limit");
     },
   };
 }
