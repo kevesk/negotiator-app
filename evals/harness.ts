@@ -71,8 +71,8 @@ export function prepareState(setup: Setup): SessionState {
     if (p.runTool === "offer_analyzer") { const o = runOfferTool(s, "2026-11-22"); if (!("needs" in o)) s.outputs.offer_analysis = o; else break; continue; }
     if (p.runTool === "evidence_builder") { s.outputs.evidence_summary = { achievements: slotValue(s, "achievements") }; continue; }
     if (p.runTool === "script_writer") { s.outputs.scripts = { parts: [], note: "test stub" }; continue; }
-    const ids = p.missing.length ? p.missing : p.ask; if (!ids.length) break;
-    if (ids.some((id) => setup.keepEmpty?.includes(id))) break; // the case tests how the coach asks for this fact: stop here
+    const ids = (p.missing.length ? p.missing : p.ask).filter((id) => !setup.keepEmpty?.includes(id));
+    if (!ids.length) break; // nothing left but the facts the case tests the coach asking for
     for (const id of ids) setSlot(s, id, FILL[id] ?? "not specified", "user");
   }
   return s;

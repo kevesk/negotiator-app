@@ -47,6 +47,7 @@ describe("preparing the state for the stage a case tests", () => {
   const base = { researcher: null, message: "hi", language: "en" as const };
   it("a fresh opening stays at the route stage", () => expect(workPlan(prepareState({ ...base, slots: {}, stage: "route" })).stage).toBe("route"));
   it("reaches the market stage with the user's own figures asked first when no data is wanted", () => { const p = workPlan(prepareState({ ...base, slots: {}, stage: "market" })); expect(p.stage).toBe("market"); expect(p.ask.length).toBeGreaterThan(0); });
+  it("fills the basics but leaves a kept-empty fact unknown", () => { const s = prepareState({ ...base, slots: { path: { value: "B" }, b_situation: { value: "annual_review" } }, stage: "position", keepEmpty: ["review_date"] }); expect(s.slots.role_title).toBeDefined(); expect(s.slots.review_date).toBeUndefined(); });
   it("leaves a kept-empty fact unknown so the coach can be tested asking for it", () => { const s = prepareState({ ...base, slots: {}, stage: "market", keepEmpty: ["own_target"] }); expect(s.slots.own_target).toBeUndefined(); expect(workPlan(s).ask).toContain("own_target"); });
   it("with researcher data the market step is ready to run, and the setup's own figures are kept", () => {
     const s = prepareState({ ...base, slots: { offer_base: { value: 70000 } }, researcher: { p25: 50000, median: 56000, p75: 62000 }, stage: "market" });
