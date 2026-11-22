@@ -2,7 +2,7 @@ import { recordEvent, parseEvent, logStore, type CounterStore } from "./events";
 import { runTurn, newState, type SessionState, type ChatModel, type Lang, type TurnDeps } from "@/orchestrator";
 
 export const LIMITS = { message: 4000, messages: 80, messageChars: 12000, stateBytes: 300_000 };
-export interface ChatRequest { message?: unknown; state?: unknown; language?: unknown }
+export interface ChatRequest { message?: unknown; state?: unknown; language?: unknown; skip?: unknown }
 export interface ChatResponse { status: number; body: unknown }
 
 const isLang = (x: unknown): x is Lang => x === "en" || x === "sv";
@@ -21,9 +21,9 @@ export async function handleChat(body: ChatRequest, model: ChatModel | null, tod
   if (body.state === undefined || body.state === null) { if (!isLang(body.language)) return { status: 400, body: { error: "language_required" } }; state = newState(body.language); }
   else { if (JSON.stringify(body.state).length > LIMITS.stateBytes || !validState(body.state)) return { status: 400, body: { error: "bad_state" } }; state = body.state; }
   try {
-    const r = await runTurn({ model, researcher, allowDraft: process.env.RELEASE_MODE !== "1", today }, state, body.message);
+    const r = await runTurn({ model, researcher, allowDraft: process.env.RELEASE_MODE !== "1", today }, state, body.message, { skip: body.skip === true });
     if (r.isBrief) recordEvent({ event: "brief_produced" }, counters);
-    return { status: 200, body: { reply: r.reply, state: r.state, sidebar: r.sidebar, next: r.next, suggestions: r.suggestions, stage: r.plan.stage, usedFallback: r.usedFallback, brief: r.isBrief } };
+    return { status: 200, body: { reply: r.reply, state: r.state, sidebar: r.sidebar, next: r.next, suggestions: r.suggestions, stage: r.plan.stage, usedFallback: r.usedFallback, brief: r.isBrief, finished: r.finished, canSkip: !r.finished && (r.plan.ask.length > 0 || !!r.plan.runTool) } };
   } catch {
     recordEvent(parseEvent({ event: "error", type: "model_error" }), counters); // a count only, never content
     return { status: 502, body: { error: "model_error" } };

@@ -40,7 +40,7 @@ describe("script run", () => {
 // ---------- the Critic
 const STATE = "- own_target: 52000 [user]\n- walk_away: 47000 [user]";
 const OUT = JSON.stringify({ numbers: { target: 52000, anchor: 56000 } });
-const BRIEF = `# Negotiation brief: Analyst offer\n\n## 1. Your numbers\n| | Monthly gross (SEK) | Source |\n|---|---|---|\n| Your target | 52 000 | [user] |\n| Your walk-away | 47 000 | [user] |\n\n## 5. What to say\n- The ask: "I would like 56 000 SEK a month."\n\n## 6. Concession plan\n| Step | You can move on | By | In exchange for |\n|---|---|---|---|\n| 1 | base | 3 000 | start date |\n\n## 8. Before the meeting\n- [ ] Print this brief\n\nBased on: BATNA\n\n*This brief is preparation support, not legal or financial advice.*`;
+const BRIEF = `# Negotiation brief: Analyst offer\n\n## 2. Your numbers\n| | Monthly gross (SEK) | Source |\n|---|---|---|\n| Your target | 52 000 | [user] |\n| Your walk-away | 47 000 | [user] |\n\n## 8. What to say\n- The ask: "I would like 56 000 SEK a month."\n\n## 9. Concession plan\n| Step | You can move on | By | In exchange for |\n|---|---|---|---|\n| 1 | base | 3 000 | start date |\n\n## 11. Before the meeting\n- [ ] Print this brief\n\nBased on: BATNA\n\n*This brief is preparation support, not legal or financial advice.*`;
 const ctx = (over: Partial<BriefContext> = {}): BriefContext => ({ lang: "en", brief: BRIEF, state: STATE, outputs: OUT, walkAway: 47000, target: 52000, batna: 45000, sources: [STATE, OUT, "56 000", "53 000", "3 000"], ...over });
 describe("critic code checks", () => {
   it("a clean brief has no findings", () => expect(codeChecks(ctx())).toEqual([]));
@@ -51,14 +51,14 @@ describe("critic code checks", () => {
     expect(ids(BRIEF.replace("I would like 56 000 SEK", "My floor is 47 000 SEK"))).toContain("leaks");
     expect(ids(BRIEF.replace("| 52 000 | [user] |", "| 52 000 | |"))).toContain("tags");
     expect(ids(BRIEF.replace(/\*This brief.*\*/, ""))).toContain("completeness");
-    expect(ids(BRIEF.replace("- [ ] Print this brief", "").replace("## 8. Before the meeting", ""))).toContain("completeness");
+    expect(ids(BRIEF.replace("- [ ] Print this brief", "").replace("## 11. Before the meeting", ""))).toContain("completeness");
   });
   it("flags walk-away above target and mentions of the course", () => {
     expect(codeChecks(ctx({ walkAway: 53000 })).some((f) => f.id === "consistency" && f.severity === "must_fix")).toBe(true);
     expect(codeChecks(ctx({ brief: BRIEF + "\nAs we learned in the negotiation course." })).some((f) => f.id === "leaks")).toBe(true);
   });
-  it("finds sections by number in any language", () => expect(sectionOf(BRIEF.replace("What to say", "Vad du ska säga"), 5)).toContain("The ask"));
-  it("flags a brief that is too long", () => expect(codeChecks(ctx({ brief: BRIEF + " word".repeat(900) })).some((f) => f.id === "length")).toBe(true));
+  it("finds sections by number in any language", () => expect(sectionOf(BRIEF.replace("What to say", "Vad du ska säga"), 8)).toContain("The ask"));
+  it("flags a brief that is too long", () => expect(codeChecks(ctx({ brief: BRIEF + " word".repeat(1200) })).some((f) => f.id === "length")).toBe(true));
 });
 describe("critic review", () => {
   const critic = (reply: string | Error): ChatModel => ({ async complete() { if (reply instanceof Error) throw reply; return reply; } });

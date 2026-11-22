@@ -30,6 +30,6 @@ describe("interface text", () => {
     for (const k of ["notice", "privacy", "copy", "copied", "savePdf", "briefReady", "ratingQ", "ratingThanks"] as const) { expect(T.en[k].length).toBeGreaterThan(2); expect(T.sv[k].length).toBeGreaterThan(2); }
     expect(Object.keys(T.en.ratings)).toEqual(Object.keys(T.sv.ratings));
   });
-  it("the provider notice says what is true: the service stores nothing, a provider processes the text", () => { expect(T.en.notice).toMatch(/AI provider/); expect(T.en.notice).toMatch(/stores nothing/); expect(T.sv.notice).toMatch(/AI-leverantör/); });
+  it("the provider notice says what is true: the service stores nothing, a provider processes the text", () => { expect(T.en.notice).toMatch(/AI provider/); expect(T.en.notice).toMatch(/Nothing is stored/); expect(T.sv.notice).toMatch(/AI-leverantör/); });
 });
 vi.restoreAllMocks();

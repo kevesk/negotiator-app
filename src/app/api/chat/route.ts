@@ -13,7 +13,7 @@ export async function POST(req: Request): Promise<Response> {
   const model = key ? anthropicModel({ apiKey: key, model: process.env.ANTHROPIC_MODEL, fastModel: process.env.ANTHROPIC_FAST_MODEL }) : null;
   const today = new Date().toISOString().slice(0, 10);
   // live market research is on unless MARKET_RESEARCH=off (it needs web search enabled for the organisation in the Anthropic Console)
-  const researcher = key && process.env.MARKET_RESEARCH !== "off" ? anthropicResearcher({ apiKey: key, model: process.env.ANTHROPIC_MODEL, today }) : undefined;
+  const researcher = key && process.env.MARKET_RESEARCH !== "off" ? anthropicResearcher({ apiKey: key, model: process.env.ANTHROPIC_MODEL, fastModel: process.env.ANTHROPIC_FAST_MODEL, today }) : undefined;
   const r = await handleChat((body ?? {}) as Record<string, unknown>, model, today, researcher);
   return Response.json(r.body, { status: r.status });
 }

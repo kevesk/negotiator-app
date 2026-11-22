@@ -4,16 +4,16 @@ import type { Stage } from "@/retrieval";
 
 type Json = Record<string, any>;
 const STAGES = FLOW.stages as unknown as Json[];
-export const STAGE_ORDER: Stage[] = ["route", "intake", "position", "market", "numbers", "strategy", "scripts", "brief"];
+export const STAGE_ORDER: Stage[] = ["route", "intake", "position", "interests", "market", "numbers", "strategy", "scripts", "brief"];
 export const SIDEBAR: Record<string, string> = Object.fromEntries(STAGES.filter((s) => s.sidebar).map((s) => [s.id, s.sidebar]));
 SIDEBAR.debrief = "After the meeting";
 export const QUESTIONS_PER_TURN: number = (FLOW.limits as Json).questions_per_turn;
 export const sidebarStep = (stage: Stage): string => SIDEBAR[stage] ?? "Brief";
 
-/** Slots the researcher call must wait for: the user's own numbers come before the market range is shown. */
-const MARKET_PRE = ["own_target", "walk_away", "batna"];
-/** Outputs each stage produces by running a tool; the stage is done only when they exist. */
+/** Outputs each stage produces by running a tool; the stage is done only when they exist (a skip or "no data found" also counts). */
 const STAGE_OUTPUT: Partial<Record<Stage, string>> = { market: "market_range", numbers: "numbers", scripts: "scripts", brief: "brief" };
+/** The value a skipped question holds (Slot-Definitions, "Skipping"). It counts as answered. */
+export const SKIPPED = "unknown";
 
 const def = (id: string) => STAGES.find((s) => s.id === id)!;
 /** Required slots for a stage in the current state (path and phase aware). Order is the order the flow lists them. */
@@ -21,6 +21,10 @@ export function requiredFor(stage: Stage, s: SessionState): string[] {
   const st = def(stage); const path = pathOf(s); const out: string[] = [];
   const add = (l?: string[]) => l?.forEach((x) => !out.includes(x) && out.push(x));
   add(st.requires); add(st.requires_all);
+  // conditional requirements, e.g. "negotiate_scope=package": [package_issues]
+  for (const [cond, ids] of Object.entries((st.requires_if ?? {}) as Record<string, string[]>)) {
+    const [slot, want] = cond.split("="); if (String(slotValue(s, slot!) ?? "").toLowerCase() === want) add(ids);
+  }
   const byPath = st.requires_by_path?.[path ?? ""];
   if (stage === "intake" && byPath) {
     add(byPath.always);
@@ -55,7 +59,8 @@ export function workPlan(s: SessionState): WorkPlan {
   for (const stage of STAGE_ORDER) {
     const g = gate(stage, s);
     let missing = g.missing;
-    if (stage === "market" && g.met) missing = MARKET_PRE.filter((id) => !isSet(s, id));
+    // the user's own view (BATNA, target, walk-away) comes before any market figure
+    if (g.met && def(stage).asks_first && !(STAGE_OUTPUT[stage]! in s.outputs)) missing = (def(stage).asks_first as string[]).filter((id) => !isSet(s, id));
     if (missing.length) {
       const ranked = [...missing].sort((a, b) => tierOf(a, s) - tierOf(b, s));
       return { stage, ask: ranked.slice(0, QUESTIONS_PER_TURN), missing };
@@ -71,6 +76,9 @@ export function workPlan(s: SessionState): WorkPlan {
     if (out && !(out in s.outputs) && !(out === "market_range" && isSet(s, "market_range"))) {
       return { stage, ask: [], missing: [], runTool: ({ market: "researcher", numbers: "numbers_engine", scripts: "script_writer" } as Record<string, Tool>)[stage] };
     }
+    // after the tool: what the user decides from its result (e.g. the first offer from the engine's options)
+    const after = ((def(stage).after_tool ?? []) as string[]).filter((id) => !isSet(s, id) && !(s.outputs[out ?? ""] as { skipped?: boolean } | undefined)?.skipped);
+    if (after.length) return { stage, ask: after.slice(0, QUESTIONS_PER_TURN), missing: after };
   }
   return { stage: "brief", ask: [], missing: [] };
 }
@@ -97,10 +105,11 @@ export const STAGE_GOAL: Record<string, string> = {
   route: "Decide path A (new job) or B (current job). Confirm in one line if the first message makes it obvious.",
   intake: "Capture the situation and the basic facts. Conversational: one short acknowledgement of what you learned, then the next question.",
   position: "A: understand the offer or the salary question. B: build the evidence case from the user's real achievements; never invent items.",
-  market: "Estimate a market range with confidence, sources and date. Ask for the user's own target, walk-away and alternative first.",
-  numbers: "Present the numbers engine's results: table, reasoning in two or three lines, confidence. The user sets the final numbers.",
-  strategy: "Levers, trade-offs, sequencing, counterpart view and concessions. Offer two or three options with a recommendation.",
-  scripts: "Opening, ask, responses to objections and close, in the user's channel and language, using only approved numbers.",
-  brief: "Produce the final prep brief with a next step and the session summary.",
+  interests: "Find out what matters to the user and why (their interests), and whether they negotiate salary only or a whole package; give examples of other items (vacation days, flexible hours, remote days, pension, title, training, start date).",
+  market: "Ask for the user's best alternative (BATNA), own target and walk-away first. Then show the one market search in plain words (typical pay, middle) with confidence, sources and date. No data found: say so once and move on.",
+  numbers: "Present the numbers engine's results: target, walk-away and a separate first offer above the target with its reason; explain that deals often land between the first offer and the walk-away. The user chooses the first offer and sets the final numbers.",
+  strategy: "For a package: 100 points across the items, then at least two packages of equal value to the user (multiple equivalent offers). The employer's likely interests and limits, concessions, and answers to the likely tough questions.",
+  scripts: "Opening, ask, responses to objections and close, in the user's channel and language, using only approved numbers. Offer optional practice of one tough question, with a clear option to skip.",
+  brief: "Produce the final prep brief, then ask plainly whether the user wants to save it as a PDF with the Save button.",
   debrief: "After the meeting: what happened and what to do next.",
 };

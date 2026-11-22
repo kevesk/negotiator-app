@@ -52,11 +52,20 @@ export function anthropicModel(opts: { apiKey: string; model?: string; fastModel
 }
 
 import { runResearch, toMarketRange, researchInputFrom } from "@/agents/researcher";
+import { scbMarketRange } from "@/agents/scb";
 import { slotValue, type SessionState } from "@/orchestrator";
 /** Live market research on the Claude API's web search and fetch tools, limited to the source catalogue (milestone 6). */
-export function anthropicResearcher(opts: { apiKey: string; model?: string; today: string }) {
+/**
+ * Market research: SCB's official statistics first (D114): the cheap model picks the occupation group, the figures come from
+ * SCB directly. Only when SCB has nothing does the web researcher run. Either way the search runs once per session.
+ */
+export function anthropicResearcher(opts: { apiKey: string; model?: string; fastModel?: string; today: string; fetch?: typeof fetch }) {
   const client = new Anthropic({ apiKey: opts.apiKey, maxRetries: 1, timeout: 40_000 });
+  const picker = anthropicModel({ apiKey: opts.apiKey, model: opts.model, fastModel: opts.fastModel });
   return async (s: SessionState) => {
+    const scb = await scbMarketRange({ role: String(slotValue(s, "role_title") ?? ""), duties: slotValue<string>(s, "role_description"), industry: slotValue<string>(s, "industry"), employerType: slotValue(s, "employer_type") },
+      { model: picker, fetch: (opts.fetch ?? fetch) as never });
+    if (scb) return scb;
     const input = researchInputFrom((id) => slotValue(s, id)); // never includes own target, walk-away or current pay
     const r = await runResearch(input, { client: client as never, model: opts.model ?? DEFAULT_MODEL, today: opts.today });
     if (!r.ok || !r.value) return { range: null, research: { failed: true, gaps_and_next_steps: ["No figures could be verified from the source catalogue. Ask the user for a job ad with a pay range, a union or Saco pay survey, or their own data."] } };

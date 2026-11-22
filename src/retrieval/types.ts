@@ -1,5 +1,5 @@
 export type Agent = "coach" | "researcher" | "simulator" | "scorer" | "writer" | "critic";
-export type Stage = "route" | "intake" | "position" | "market" | "numbers" | "strategy" | "scripts" | "brief" | "practice" | "debrief";
+export type Stage = "route" | "intake" | "position" | "interests" | "market" | "numbers" | "strategy" | "scripts" | "brief" | "practice" | "debrief";
 
 export interface NoteMeta {
   name: string; title: string; folder: string; type: string | null; status: string | null;

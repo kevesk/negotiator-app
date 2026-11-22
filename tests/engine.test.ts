@@ -11,7 +11,8 @@ describe("anchor options (D70)", () => {
   const t = { target: 50000, p75: 56000 };
   it("offers hold, halfway, at P75", () => expect(anchorOptions(t).map((o) => [o.id, o.amount])).toEqual([["hold", 50000], ["halfway", 53000], ["at_p75", 56000]]));
   it("halfway is an assumption until confirmed", () => expect(anchorOptions(t).find((o) => o.id === "halfway")!.assumed).toBe(true));
-  it("only hold and own without P75", () => expect(anchorOptions({ target: 50000 }).map((o) => o.id)).toEqual(["hold"]));
+  it("without P75: hold and a first offer a little above the target (D111)", () => expect(anchorOptions({ target: 50000 }).map((o) => [o.id, o.amount, o.flags])).toEqual([["hold", 50000, []], ["above_target", 52500, ["no_market_check"]]]));
+  it("target at or above P75 also gets the above-target option, flagged", () => expect(anchorOptions({ target: 60000, p75: 58000 }).find((o) => o.id === "above_target")!.flags).toEqual(["above_p75"]));
   it("rounds halfway to 500 and never goes below target", () => expect(anchorOptions({ target: 50000, p75: 50200 }).find((o) => o.id === "halfway")!.amount).toBe(50000));
   it("own above P75 is flagged", () => expect(anchorOptions({ ...t, own: 58000 }).find((o) => o.id === "own")!.flags).toEqual(["anchor_above_p75"]));
   it("own below target is refused", () => expect(() => anchorOptions({ ...t, own: 49000 })).toThrow());

@@ -2,8 +2,9 @@ import { retrieve, renderForPrompt, type Retrieved } from "@/retrieval";
 import { preSend, FALLBACK, allowedValues, type Finding } from "@/checks";
 import { stableSystemPrompt, stateLine } from "@/agents/prompt";
 import { clone, setSlot, slotValue, type SessionState } from "./state";
-import { detectModifiers, numbersGateOpen, sidebarStep, STAGE_GOAL, workPlan, type Tool, type WorkPlan } from "./controller";
-import { extractSlots, applyExtraction } from "./extract";
+import { detectModifiers, numbersGateOpen, sidebarStep, STAGE_GOAL, workPlan, SKIPPED, type Tool, type WorkPlan } from "./controller";
+import type { Stage } from "@/retrieval/types";
+import { extractSlots, applyExtraction, type Extraction } from "./extract";
 import { fromSummary } from "./summary";
 import { runNumbersTool, type MarketRange } from "./tools";
 import { runOfferTool } from "./offer";
@@ -34,6 +35,10 @@ export interface TurnResult {
   /** True when this reply is the first final brief (the app then shows copy, PDF and the usefulness question). */
   isBrief: boolean;
   findings: Finding[]; usedFallback: boolean; retrieved: Retrieved[];
+  /** True when the user has ended the session. */
+  finished: boolean;
+  /** What a Skip tap marked as unknown this turn. */
+  skipped: string[];
   /** The situation notes given in full this turn (see Retrieval-Design). */
   guides: { note: string; title: string; text: string }[];
   /** Test diagnostics only: the draft and the errors when the reply was replaced by the fallback. Never sent to the browser. */
@@ -50,7 +55,19 @@ function stateSummary(s: SessionState): string {
 }
 
 /** One turn of the conversation (Coach-Orchestrator-Spec: The turn loop). The code owns state, gates and checks; the model owns the wording. */
-export async function runTurn(deps: TurnDeps, prev: SessionState, message: string): Promise<TurnResult> {
+export interface TurnOptions { /** The user tapped Skip: the current question or step is marked unknown and the flow moves on. */ skip?: boolean }
+
+/** Marks what the current step asks for as skipped. Returns the ids or tool steps skipped. */
+export function skipStep(s: SessionState, plan: WorkPlan): string[] {
+  if (plan.ask.length) { for (const id of plan.ask) setSlot(s, id, SKIPPED, "user"); return [...plan.ask]; }
+  const key = ({ researcher: "market_range", numbers_engine: "numbers", script_writer: "scripts", offer_analyzer: "offer_analysis", evidence_builder: "evidence_summary" } as Record<string, string>)[plan.runTool ?? ""];
+  if (key) { s.outputs[key] = { skipped: true }; return [plan.runTool!]; }
+  return [];
+}
+/** Retrieval stages are those in the notes' frontmatter; the interests stage reads the position notes. */
+const retrievalStage = (st: Stage): Stage => (st === "interests" ? "position" : st);
+
+export async function runTurn(deps: TurnDeps, prev: SessionState, message: string, opts: TurnOptions = {}): Promise<TurnResult> {
   const s = clone(prev);
   s.turn += 1; s.userTexts.push(message);
 
@@ -59,8 +76,10 @@ export async function runTurn(deps: TurnDeps, prev: SessionState, message: strin
   if (message.includes("SESSION SUMMARY v1")) { const r0 = fromSummary(message, s); confirm = r0.confirm; if (!r0.ok) s.userTexts.push("(the pasted summary could not be read)"); }
   // 1-2. update the state from the message; changed slots invalidate their dependants
   let plan = workPlan(s);
-  const ext = await extractSlots(deps.model, s, message, plan.missing, { catalogue: SITUATION_CATALOGUE, isSituation });
-  applyExtraction(s, ext);
+  let skipped: string[] = [];
+  const ext: Extraction = opts.skip ? { slots: {}, modifiers: [], situations: [], done: false } : await extractSlots(deps.model, s, message, plan.missing, { catalogue: SITUATION_CATALOGUE, isSituation });
+  if (opts.skip) skipped = skipStep(s, plan); else applyExtraction(s, ext);
+  if (ext.done) s.finished = true;
   s.modifiers = detectModifiers(s);
   plan = workPlan(s);
 
@@ -73,8 +92,10 @@ export async function runTurn(deps: TurnDeps, prev: SessionState, message: strin
     else s.outputs.market_range = { unavailable: true }; // the coach asks the user for a range or their own data instead
   } else if (tool === "numbers_engine") {
     const r = runNumbersTool(s); if (!("needs" in r)) s.outputs.numbers = r;
+    else if (r.needs.every((id) => slotValue(s, id) === SKIPPED)) s.outputs.numbers = { skipped: true, missing: r.needs }; // the user skipped a figure the engine needs
   } else if (tool === "offer_analyzer" && !deps.tools?.offer_analyzer) {
     const r = runOfferTool(s, deps.today);
+    if ("needs" in r && r.needs.every((id) => slotValue(s, id) === SKIPPED)) s.outputs.offer_analysis = { skipped: true, missing: r.needs };
     if (!("needs" in r)) { s.outputs.offer_analysis = r; setSlot(s, "total_comp_offer", { cash_subtotal: r.cash_subtotal, parts: r.parts.length }, "computed"); if (r.offers_comparison) setSlot(s, "offer_comparison", { columns: r.offers_comparison.columns }, "computed"); }
   } else if (tool === "script_writer" && !deps.tools?.script_writer) {
     s.outputs.scripts = await runScriptTool(s, deps.model, deps.today, deps.allowDraft ?? true);
@@ -87,8 +108,8 @@ export async function runTurn(deps: TurnDeps, prev: SessionState, message: strin
 
   // 5. retrieve notes for the stage and active modifiers
   const query = [message, STAGE_GOAL[plan.stage], plan.ask.join(" ")].join(" ");
-  const r = retrieve(query, { agent: "coach", path: slotValue<"A" | "B">(s, "path") ?? "A", stage: plan.stage, modifiers: s.modifiers, allowDraft: deps.allowDraft ?? true, today: deps.today });
-  const rs = { agent: "coach" as const, path: slotValue<"A" | "B">(s, "path") ?? "A", stage: plan.stage, modifiers: s.modifiers, allowDraft: deps.allowDraft ?? true, today: deps.today };
+  const r = retrieve(query, { agent: "coach", path: slotValue<"A" | "B">(s, "path") ?? "A", stage: retrievalStage(plan.stage), modifiers: s.modifiers, allowDraft: deps.allowDraft ?? true, today: deps.today });
+  const rs = { agent: "coach" as const, path: slotValue<"A" | "B">(s, "path") ?? "A", stage: retrievalStage(plan.stage), modifiers: s.modifiers, allowDraft: deps.allowDraft ?? true, today: deps.today };
   const guides = ext.situations.map((n) => situationGuide(n, rs)).filter((g): g is NonNullable<typeof g> => g !== null);
   for (const g of guides) if (!s.notesUsed.includes(g.note)) s.notesUsed.push(g.note);
   for (const i of r.items) if (!s.notesUsed.includes(i.note)) s.notesUsed.push(i.note);
@@ -104,14 +125,18 @@ export async function runTurn(deps: TurnDeps, prev: SessionState, message: strin
     guides.length
       ? `Situation guidance for the user's latest message (from the knowledge base; follow it before anything else: make the moves it describes, ask the questions it says to ask, offer what it says to offer; never name the note):\n${guides.map((g) => `### ${g.title}\n${g.text}`).join("\n\n")}\n\nRespond to that situation first; its questions come before the facts listed below.`
       : "First respond to what the user just raised. If the retrieved notes describe a move for that situation (questions to ask, an exercise to offer, a check to make, a point to explain), make that move first; its questions come before the facts listed below.",
-    plan.ask.length ? `Next facts to collect (ask for these now if your reply has room; at most two questions in total, and anything left waits for a later turn):\n${asks}` : "Do not ask for new facts: present the results below and end with a next step.",
+    s.finished
+      ? "The user has said they are done. Close the session now: two or three short lines on what they have prepared, a clear reminder to save the summary as a PDF with the highlighted Save button, and good luck. Ask no question and give no suggestions."
+      : plan.ask.length ? `Next facts to collect (ask for these now if your reply has room; at most two questions in total, and anything left waits for a later turn):\n${asks}` : "Do not ask for new facts: present the results below and end with a next step.",
+    skipped.length ? `\nThe user chose to skip this (${skipped.join(", ")}). Accept it in a few words without asking it again, treat it as unknown, and move straight on to the next step.` : "",
     confirm.length ? `\nThe user pasted a session summary. Briefly confirm these time-sensitive items before relying on them: ${confirm.join(", ")}.` : "",
     "", "What you know so far:", stateSummary(s),
     Object.keys(s.outputs).length ? `\nTool results (the only source for computed figures):\n${JSON.stringify(s.outputs)}` : "",
-    s.outputs.offer_analysis ? "\nOffer analysis is ready (tool results, offer_analysis). Present it as a table of parts beside base pay and never as one total value: cash subtotal, then pension, vacation, benefits, equity and terms, each with its tag and whether it is an estimate. Say plainly which parts are unknown and what to ask the employer, name the red flags in plain words, and if offers_comparison exists, show that side-by-side table (one column per offer, the current job as a cash-only column) and note which has the highest guaranteed cash as a proposal only; if a comparison with the current job exists, propose the stronger alternative as the fallback option (BATNA) and ask the user to confirm before it is used." : "",
+    s.outputs.offer_analysis ? "\nOffer analysis is ready (tool results, offer_analysis). Present it as a table of parts beside base pay and never as one total value: cash subtotal, then pension, vacation, benefits, equity and terms, each figure with its source tag right after it (never a tag column) and a note when it is an estimate. Say plainly which parts are unknown and what to ask the employer, name the red flags in plain words, and if offers_comparison exists, show that side-by-side table (one column per offer, the current job as a cash-only column) and note which has the highest guaranteed cash as a proposal only; if a comparison with the current job exists, propose the stronger alternative as the fallback option (BATNA) and ask the user to confirm before it is used." : "",
     s.outputs.scripts && plan.stage === "scripts" ? "\nScripts are in the tool results (scripts). Present them for the user's channel and language, formatted like this script block, each with its goal, the text, the tone and what to say if they reply with the likely objection:\n" + SCRIPT_FORMAT + "\nIf provisional is true, list the assumptions. The user edits and sends them; never say anything was sent. If scripts.failed is true, say plainly that the wording could not be made safely and offer to try again. Use only the figures in the scripts." : "",
-    plan.stage === "brief" ? "\nWrite the final prep brief now, in the user's language, using exactly this template. Fill every field from the facts and tool results; write unknown where a fact is missing; no placeholder may remain; keep the headings and their numbers; 500 to 800 words in total, concise and straight to the point, short sentences, no fluff, no filler, no repetition between sections; put the scripts from the tool results into section 5; end with the checklist, the assumptions, the line of concepts used and the preparation-support line.\n\n" + PREP_BRIEF_TEMPLATE + "\n\nPath additions: " + PREP_BRIEF_ADDITIONS : "",
-    s.outputs.market_range && (s.outputs.market_range as { unavailable?: boolean }).unavailable ? "\nNo market data could be found. Say so plainly and ask the user for their own evidence (job ads with pay ranges, union statistics, colleagues' experience)." : "",
+    plan.stage === "brief" ? "\nWrite the final prep brief now, in the user's language, using exactly this template. Fill every field from the facts and tool results; write unknown where a fact is missing; no placeholder may remain; keep the headings and their numbers; 700 to 1,100 words in total, concise and straight to the point, short sentences, no fluff, no filler, no repetition between sections; put the scripts from the tool results into section 5; end with the checklist, the assumptions, the line of concepts used and the preparation-support line.\n\n" + PREP_BRIEF_TEMPLATE + "\n\nPath additions: " + PREP_BRIEF_ADDITIONS : "",
+    s.outputs.market_range && (s.outputs.market_range as { unavailable?: boolean }).unavailable ? "\nNo market data could be found. Say so plainly, once. The search runs only once: never offer to search again. Offer two ways forward: the user shares their own evidence (a job ad with a pay range, union statistics), or skips and goes on to the numbers." : "",
+    s.outputs.market_range && (s.outputs.market_range as { skipped?: boolean }).skipped ? "\nThe user skipped the market step: do not show or ask for market data; work from the user's own figures." : "",
     r.items.length ? `\nNotes you may use:\n${renderForPrompt(r.items)}` : "\nNo relevant notes were found: if you answer without backing, label it as a guess (rule 6).",
   ].filter((x) => x !== "").join("\n");
   const messages = [...s.messages, { role: "user" as const, content: message }];
@@ -157,5 +182,5 @@ export async function runTurn(deps: TurnDeps, prev: SessionState, message: strin
 
   // 8. record the exchange
   s.messages.push({ role: "user", content: message }, { role: "assistant", content: draft });
-  return { reply: draft, state: s, plan, sidebar: sidebarStep(plan.stage), next, suggestions, isBrief: plan.stage === "brief" && !usedFallback && !prev.outputs.brief, rejected, guides, findings: check.findings, usedFallback, retrieved: r.items };
+  return { reply: draft, state: s, plan, sidebar: sidebarStep(plan.stage), next, suggestions: s.finished ? [] : suggestions, finished: s.finished === true, skipped, isBrief: plan.stage === "brief" && !usedFallback && !prev.outputs.brief, rejected, guides, findings: check.findings, usedFallback, retrieved: r.items };
 }
