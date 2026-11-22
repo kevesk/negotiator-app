@@ -55,6 +55,7 @@ const DEFAULT_RANGE: MarketRange = { p25: 52000, median: 58000, p75: 64000, conf
 export function withProvenance(r: MarketRange): MarketRange {
   return { ...r, sources: r.sources?.length ? r.sources : ["Test source (stub)"], valid_as_of: r.valid_as_of ?? "2026-11-22" };
 }
+function stubResearch(range: MarketRange) { return { stub: true, range, confidence: { level: range.confidence ?? "medium", reasons: ["Test data supplied by the case setup, not a live source"] } }; }
 export function prepareState(setup: Setup): SessionState {
   const s = newState(setup.language);
   for (const [id, v] of Object.entries(setup.slots)) setSlot(s, id, v.value, "user", { unit: v.unit });
@@ -64,7 +65,7 @@ export function prepareState(setup: Setup): SessionState {
     const p = workPlan(s); const at = STAGE_ORDER.indexOf(p.stage);
     if (at > target) break;
     if (at === target && !(wantsData && p.ask.length)) break;
-    if (p.runTool === "researcher") { const r = setup.researcher; if (r === "none") { s.outputs.market_range = { unavailable: true }; } else { const range = (r ?? DEFAULT_RANGE) as MarketRange; setSlot(s, "market_range", range, "researcher"); s.outputs.market_range = range; s.outputs.market_research = { stub: true, range }; } continue; }
+    if (p.runTool === "researcher") { const r = setup.researcher; if (r === "none") { s.outputs.market_range = { unavailable: true }; } else { const range = (r ?? DEFAULT_RANGE) as MarketRange; setSlot(s, "market_range", range, "researcher"); s.outputs.market_range = range; s.outputs.market_research = stubResearch(range); } continue; }
     if (p.runTool === "numbers_engine") { const n = runNumbersTool(s); if (!("needs" in n)) s.outputs.numbers = n; else break; continue; }
     if (p.runTool === "offer_analyzer") { const o = runOfferTool(s, "2026-11-22"); if (!("needs" in o)) s.outputs.offer_analysis = o; else break; continue; }
     if (p.runTool === "evidence_builder") { s.outputs.evidence_summary = { achievements: slotValue(s, "achievements") }; continue; }
@@ -75,7 +76,7 @@ export function prepareState(setup: Setup): SessionState {
   return s;
 }
 
-export const JUDGE_SYSTEM = `You grade one reply from a salary-negotiation coaching chatbot against a written test case. Be strict and literal. For every "must" item decide whether the reply does it; for every "must not" item decide whether the reply avoids it (pass = avoided). Judge only what the reply text shows. A short reason of one line per item.
+export const JUDGE_SYSTEM = `You grade one reply from a salary-negotiation coaching chatbot against a written test case. Be strict and literal. For every "must" item decide whether the reply does it; for every "must not" item decide whether the reply avoids it (pass = avoided). Judge only what the reply text shows. An item that is conditional (it starts with 'if' or contains 'if it was not yet given') passes when its condition does not apply. A short reason of one line per item.
 Output ONLY one JSON object: {"must":[{"pass":true|false,"reason":"..."}],"must_not":[{"pass":true|false,"reason":"..."}]} with exactly one entry per item, in the order given.`;
 
 export async function judgeReply(model: ChatModel, c: EvalCase, setup: Setup, reply: string): Promise<NonNullable<RunResult["judge"]>> {
@@ -105,7 +106,7 @@ export async function runCase(c: EvalCase, run: number, deps: CaseDeps, setupCac
   try {
     let setup = setupCache?.get(c.id); if (!setup) { setup = await interpretSetup(deps.model, c); setupCache?.set(c.id, setup); }
     const s: SessionState = prepareState(setup);
-    const researcher = async () => (setup.researcher && setup.researcher !== "none" ? { range: setup.researcher as MarketRange, research: { stub: true, range: setup.researcher } } : { range: null });
+    const researcher = async () => (setup.researcher && setup.researcher !== "none" ? { range: setup.researcher as MarketRange, research: stubResearch(setup.researcher as MarketRange) } : { range: null });
     const r = await runTurn({ model: deps.model, researcher, today: deps.today, allowDraft: true }, s, setup.message);
     const rule = ruleChecks(r);
     const judge = c.judge || !c.human ? await judgeReply(deps.judge ?? deps.model, c, setup, r.reply) : undefined;

@@ -1147,7 +1147,8 @@
    "input": "(market stage)",
    "message": null,
    "must": [
-    "shows the range as wide and says that it is wide, without narrowing it or adding a margin",
+    "does not narrow the range or add a margin",
+    "says the data is thin and the range is rough",
     "says confidence is low and why",
     "asks the user for their own evidence (job ads, union statistics)",
     "explains how to firm it up"
@@ -1477,7 +1478,7 @@
    "input": "\"Just tell me what number to ask for.\"",
    "message": "Just tell me what number to ask for.",
    "must": [
-    "explains the process in two lines",
+    "explains the process briefly (two or three short lines at most)",
     "asks the one or two questions that unlock the answer (the user's own target, the role)",
     "offers a provisional framework, not a number"
    ],
