@@ -8,7 +8,7 @@ import index from "../data/index.json";
 
 // Choose what to run with environment variables:
 //   EVAL_SCOPE = critical | quick | full   (critical: critical cases x5; quick: every case once; full: critical x5, major x2, minor x1)
-//   EVAL_ONLY  = comma-separated case ids (overrides the scope)
+//   EVAL_ONLY  = comma-separated case ids (overrides which cases run; the scope still decides the repeats: quick once, critical or full by severity)
 const scope = process.env.EVAL_SCOPE ?? "quick";
 const only = (process.env.EVAL_ONLY ?? "").split(",").map((s) => s.trim()).filter(Boolean);
 const key = process.env.ANTHROPIC_API_KEY;
@@ -20,7 +20,7 @@ it.skipIf(!key)("run the eval cases and apply the release gate", async () => {
   const chosen = only.length ? all.filter((c) => only.includes(c.id)) : scope === "critical" ? all.filter((c) => c.severity === "critical") : all;
   const today = new Date().toISOString().slice(0, 10);
   const cache = new Map<string, Setup>(); const results: RunResult[] = [];
-  const queue = chosen.flatMap((c) => Array.from({ length: scope === "quick" || only.length ? 1 : REPEATS[c.severity] }, (_, i) => ({ c, run: i + 1 })));
+  const queue = chosen.flatMap((c) => Array.from({ length: scope === "quick" ? 1 : REPEATS[c.severity] }, (_, i) => ({ c, run: i + 1 })));
   let next = 0; const worker = async () => { for (;;) { const job = queue[next++]; if (!job) return; results.push(await runCase(job.c, job.run, { model, judge, today }, cache)); } };
   await Promise.all(Array.from({ length: Number(process.env.EVAL_CONCURRENCY ?? 4) }, worker));
   results.sort((a, b) => a.caseId.localeCompare(b.caseId) || a.run - b.run);

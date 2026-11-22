@@ -68,7 +68,7 @@ describe("modifiers", () => {
 });
 
 describe("extraction", () => {
-  it("parses a clean reply", () => expect(parseExtraction('{"slots":{"path":{"value":"B"},"own_target":{"value":52000,"unit":"SEK/month"}},"modifiers":["competing_offer"]}')).toEqual({ slots: { path: { value: "B", unit: undefined }, own_target: { value: 52000, unit: "SEK/month" } }, modifiers: ["competing_offer"] }));
+  it("parses a clean reply", () => expect(parseExtraction('{"slots":{"path":{"value":"B"},"own_target":{"value":52000,"unit":"SEK/month"}},"modifiers":["competing_offer"]}')).toEqual({ slots: { path: { value: "B", unit: undefined }, own_target: { value: 52000, unit: "SEK/month" } }, modifiers: ["competing_offer"], situations: [] }));
   it("survives prose around the JSON and drops unknown ids, derived ids, nulls and bad modifiers", () => {
     const e = parseExtraction('Sure! {"slots":{"bogus":{"value":1},"anchor":{"value":5},"walk_away":{"value":null},"channel":{"value":"video"}},"modifiers":["nonsense"]} done');
     expect(Object.keys(e.slots)).toEqual(["channel"]); expect(e.modifiers).toEqual([]);
