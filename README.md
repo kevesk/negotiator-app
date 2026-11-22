@@ -4,9 +4,11 @@ Negotiator takes you through preparing for a salary conversation, step by step, 
 
 It works for a **new job offer** and for a **raise at your current job**, in **Swedish and English**. The advice comes from a knowledge base I built from the Negotiation course at NTU Singapore, adapted to Swedish working life (collective agreements, occupational pension, SCB pay statistics, Swedish tax tables).
 
-**Live demo:** [negotiator-app-pi.vercel.app](https://negotiator-app-pi.vercel.app). This is a test version, and the access code is available on request.
+**Live demo:** [negotiator-pearl.vercel.app](https://negotiator-pearl.vercel.app). This is a test version, and the access code is available on request.
 
-![A session in progress](docs/screenshot.png)
+**Watch a session (2 min):** [docs/negotiator-demo.mp4](docs/negotiator-demo.mp4). It shows a real session on the live site, from the first message to the saved PDF.
+
+![The numbers step: first offer, concession steps and pay after tax, with the deal line on the left](docs/screenshot.png)
 
 ## What a session looks like
 
@@ -74,10 +76,10 @@ The full list is in the vault's Decisions-Log (116 decisions). A few that shaped
 
 ## Testing
 
-- **363 automated tests** (Vitest). They cover the stage machine, the numbers, package and offer engines, the tax tables, SCB parsing, reply checks, the PDF plan, access limits, and making sure no server code reaches the browser.
+- **370 automated tests** (Vitest). They cover the stage machine, the numbers, package and offer engines, the tax tables, SCB parsing, reply checks, the PDF plan, access limits, and making sure no server code reaches the browser.
 - **An eval harness of 76 scripted cases** with code checks and a model judge, run as a manual GitHub workflow with a release gate.
 - **A free retrieval check** for whether the right note is found for 32 known questions.
-- **Manual end-to-end testing in both languages.** Several features came straight from it: the skip button, the plain-language PDF, and the package engine.
+- **Manual end-to-end testing in both languages.** Several features came straight from it: the skip button, the plain-language PDF, and the package engine. Recording the demo video found three more bugs: free-text values the flow didn't recognise, a target saved as an object, and the session ending when the user said "I'm happy with" a figure. Each was fixed with a test that reproduces it.
 
 ## Run it locally
 

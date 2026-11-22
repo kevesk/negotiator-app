@@ -154,7 +154,7 @@ export function planMarkdown(s: SessionState, lang: Lang, brief?: string): strin
   const scope = str(val(s, "scope_change")); if (scope) args.push(l.argScope(firstPerson(scope.replace(/\.$/, ""), lang)));
   const years = num(val(s, "experience_years")); if (years) args.push(l.argExp(years));
   if (typeof m?.median === "number" && typeof m?.p75 === "number" && current !== undefined) args.push(l.argMarket(kr(current, lang), kr(m.median, lang), kr(m.p75, lang)));
-  const last = str(val(s, "last_raise")); if (last) args.push(l.argLast(last));
+  const lr = val<unknown>(s, "last_raise"); const last = typeof lr === "number" ? `${lr} %` : str(lr); if (last) args.push(l.argLast(last));
   if (!achList.length) args.push(l.argNone);
   out.push(...args.map((a) => `- ${a}`), "");
 
