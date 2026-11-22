@@ -79,18 +79,34 @@ export function prepareState(setup: Setup): SessionState {
 }
 
 export const JUDGE_SYSTEM = `You grade one reply from a salary-negotiation coaching chatbot against a written test case. Be strict and literal. For every "must" item decide whether the reply does it; for every "must not" item decide whether the reply avoids it (pass = avoided). Judge only what the reply text shows. An item that is conditional (it starts with 'if' or contains 'if it was not yet given') passes when its condition does not apply. A short reason of one line per item, with no double quote characters inside it (use single quotes).
-Output ONLY one JSON object: {"must":[{"pass":true|false,"reason":"..."}],"must_not":[{"pass":true|false,"reason":"..."}]} with exactly one entry per item, in the order given.`;
+Output exactly one line per item, in the order given, and nothing else:
+MUST 1: PASS - <reason>
+MUST 2: FAIL - <reason>
+MUST NOT 1: PASS - <reason>
+(PASS for a must item means the reply does it; PASS for a must-not item means the reply avoids it.)`;
+
+/** Reads the judge's answer: the line format first, then a JSON object as older answers used. Null when it does not line up with the items. */
+export function parseVerdicts(text: string, nMust: number, nNot: number): { must: { pass: boolean; reason: string }[]; must_not: { pass: boolean; reason: string }[] } | null {
+  const must: { pass: boolean; reason: string }[] = [], not: { pass: boolean; reason: string }[] = [];
+  for (const m of text.matchAll(/^\s*\**\s*MUST\s*(NOT)?\s*(\d+)\s*\**\s*[:.)-]\s*\**\s*(PASS|FAIL)\b\**\s*[-–—:]?\s*(.*)$/gim)) {
+    const arr = m[1] ? not : must; const i = Number(m[2]) - 1; if (i >= 0 && i < 50) arr[i] = { pass: m[3]!.toUpperCase() === "PASS", reason: (m[4] ?? "").trim() };
+  }
+  const full = (a: unknown[], n: number) => a.length === n && [...Array(n).keys()].every((i) => a[i] !== undefined);
+  if (full(must, nMust) && full(not, nNot)) return { must, must_not: not };
+  const j = parseJson(text);
+  return Array.isArray(j?.must) && j.must.length === nMust && Array.isArray(j?.must_not) && j.must_not.length === nNot ? j : null;
+}
 
 export async function judgeReply(model: ChatModel, c: EvalCase, setup: Setup, reply: string, knowledge = ""): Promise<NonNullable<RunResult["judge"]>> {
   const user = [`Test: ${c.id} ${c.name}`, `Setup: ${c.setup || "(fresh session)"}`, `User message: ${setup.message}`, "", ...(knowledge ? ["Knowledge-base text the coach was given this turn (a detail that appears here is from the knowledge base, not from memory):", knowledge, ""] : []), "Reply to grade:", reply, "", "MUST:", ...c.must.map((m, i) => `${i + 1}. ${m}`), "", "MUST NOT:", ...c.mustNot.map((m, i) => `${i + 1}. ${m}`)].join("\n");
   try {
-    const ask = async () => parseJson(await model.complete({ purpose: "critic", system: JUDGE_SYSTEM, messages: [{ role: "user", content: user }] }));
-    let j = await ask();
-    const lines = (x: any) => Array.isArray(x?.must) && x.must.length === c.must.length && Array.isArray(x?.must_not) && x.must_not.length === c.mustNot.length;
-    for (let k = 0; k < 2 && !lines(j); k++) j = await ask(); // up to two retries when the answer is unreadable or does not line up with the items
+    let raw = "";
+    const ask = async () => { raw = await model.complete({ purpose: "critic", system: JUDGE_SYSTEM, messages: [{ role: "user", content: user }] }); return parseVerdicts(raw, c.must.length, c.mustNot.length); };
+    let j: any = await ask();
+    for (let k = 0; k < 2 && !j; k++) j = await ask(); // up to two retries when the answer is unreadable or does not line up with the items
     const take = (arr: unknown, items: string[]): Verdict[] | null => Array.isArray(arr) && arr.length === items.length ? items.map((item, i) => ({ item, pass: (arr[i] as any)?.pass === true, reason: String((arr[i] as any)?.reason ?? "").slice(0, 240) })) : null;
     const must = take(j?.must, c.must), mustNot = take(j?.must_not, c.mustNot);
-    if (!must || !mustNot) return { ok: false, must: [], mustNot: [], error: `the judge's answer did not match the case: ${JSON.stringify(j ?? null).slice(0, 300)}` };
+    if (!must || !mustNot) return { ok: false, must: [], mustNot: [], error: `the judge's answer did not match the case: ${raw.replace(/\s+/g, " ").slice(0, 300)}` };
     return { ok: [...must, ...mustNot].every((v) => v.pass), must, mustNot };
   } catch (e) { return { ok: false, must: [], mustNot: [], error: "the judge did not answer" }; }
 }

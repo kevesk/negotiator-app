@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import data from "../evals/cases.generated.json";
-import { interpretSetup, prepareState, judgeReply, runCase, ruleChecks, evaluateGate, staleNotes, report, REPEATS, type EvalCase, type RunResult } from "../evals/harness";
+import { parseVerdicts, interpretSetup, prepareState, judgeReply, runCase, ruleChecks, evaluateGate, staleNotes, report, REPEATS, type EvalCase, type RunResult } from "../evals/harness";
 import { workPlan, type ChatModel } from "@/orchestrator";
 
 const cases = data.cases as unknown as EvalCase[];
@@ -90,4 +90,13 @@ describe("release gate", () => {
     const results = [rr(crit.id, false, 1, { reply: "bad reply" })]; const md = report({ date: "2026-11-22", model: "m", promptVersion: "p", cases: [crit], results, gate: evaluateGate([crit], results), stale: [] });
     expect(md).toContain("Release gate: FAIL"); expect(md).toContain("> bad reply"); expect(md).toContain(crit.id);
   });
+});
+
+describe("judge answer format", () => {
+  it("reads the line format, with stray quotes and bold", () => {
+    const v = parseVerdicts('MUST 1: PASS - says "package C" is out\n**MUST 2:** FAIL - no "range"\nMUST NOT 1: PASS - avoided', 2, 1)!;
+    expect(v.must.map((x) => x.pass)).toEqual([true, false]); expect(v.must_not[0]!.pass).toBe(true); expect(v.must[0]!.reason).toContain("package C");
+  });
+  it("still reads the old JSON answer", () => expect(parseVerdicts('{"must":[{"pass":true,"reason":"ok"}],"must_not":[]}', 1, 0)).not.toBeNull());
+  it("rejects an answer with a missing item", () => expect(parseVerdicts("MUST 1: PASS - ok\nMUST NOT 1: PASS - ok", 2, 1)).toBeNull());
 });
