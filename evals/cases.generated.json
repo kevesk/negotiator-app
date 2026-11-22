@@ -1121,7 +1121,7 @@
    "input": "(market stage)",
    "message": null,
    "must": [
-    "shows P25, median and P75",
+    "shows the typical range and the middle in plain words, without the terms P25, median or P75 (D113)",
     "confidence low, medium or high with a reason",
     "sources and date",
     "a short 'based on' line",
