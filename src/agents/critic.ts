@@ -69,7 +69,7 @@ const parse = (t: string): { findings?: unknown } | null => { const a = t.indexO
 export async function reviewBrief(model: ChatModel, c: BriefContext): Promise<CriticReport> {
   const findings = codeChecks(c);
   try {
-    const reply = await model.complete({ purpose: "critic", system: CRITIC_SYSTEM, messages: [{ role: "user", content: `Language of the brief: ${c.lang}\n\nSTATE (slots with tags):\n${c.state}\n\nTOOL RESULTS:\n${c.outputs}\n\nBRIEF:\n${c.brief}` }] });
+    const reply = await model.complete({ purpose: "critic", system: CRITIC_SYSTEM, cachePrefix: CRITIC_SYSTEM, messages: [{ role: "user", content: `Language of the brief: ${c.lang}\n\nSTATE (slots with tags):\n${c.state}\n\nTOOL RESULTS:\n${c.outputs}\n\nBRIEF:\n${c.brief}` }] });
     const j = parse(reply);
     if (Array.isArray(j?.findings)) for (const f of j!.findings as any[]) {
       if (f && IDS.includes(f.id) && ["must_fix", "should_fix", "note"].includes(f.severity) && !findings.some((x) => x.id === f.id && x.severity === f.severity && x.where === String(f.where ?? ""))) findings.push({ id: f.id, severity: f.severity, where: String(f.where ?? "").slice(0, 60), what: String(f.what ?? "").slice(0, 240), suggested_fix: String(f.suggested_fix ?? "").slice(0, 240) });

@@ -14,7 +14,7 @@ const only = (process.env.EVAL_ONLY ?? "").split(",").map((s) => s.trim()).filte
 const key = process.env.ANTHROPIC_API_KEY;
 
 it.skipIf(!key)("run the eval cases and apply the release gate", async () => {
-  const model = anthropicModel({ apiKey: key!, model: process.env.ANTHROPIC_MODEL });
+  const model = anthropicModel({ apiKey: key!, model: process.env.ANTHROPIC_MODEL, fastModel: process.env.ANTHROPIC_FAST_MODEL }); // setup and judge run on the fast model
   const judge = process.env.EVAL_JUDGE_MODEL ? anthropicModel({ apiKey: key!, model: process.env.EVAL_JUDGE_MODEL }) : undefined;
   const all = (data.cases as unknown as EvalCase[]);
   const chosen = only.length ? all.filter((c) => only.includes(c.id)) : scope === "critical" ? all.filter((c) => c.severity === "critical") : all;
