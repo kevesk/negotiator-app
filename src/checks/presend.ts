@@ -18,6 +18,8 @@ export interface PreSendResult { ok: boolean; findings: Finding[] }
 
 const GATE_WORDS = /(target|anchor|walk[- ]?away|reservation|landing|mållön|ankare|ankarsiffra|golv|lägsta acceptabla)[^.\n?]{0,50}?\d[\d  .,]{3,}/gi;
 const PROMISE = /\b(i guarantee|(?:is|are|be|it's|that's)\s+guaranteed\b|guaranteed\s+(?:to\b|success|result|outcome|raise|increase|yes|win)|i promise|they (will|'ll) (definitely |certainly )?(accept|agree|say yes)|i know (their|the employer'?s|the company'?s) budget|their budget is|jag garanterar|jag lovar|de kommer (säkert |definitivt )?(att )?(acceptera|säga ja)|jag vet (deras|arbetsgivarens|företagets) budget|deras budget är)\b/i;
+/** Quoted example lines and blockquotes are lines for the user to say, not questions to the user (H5). */
+const QUOTED = /"[^"\n]*"|“[^”\n]*”|”[^”\n]*”|„[^“”\n]*[“”]|«[^»\n]*»|^\s*>.*$/gm;
 /** A promise match only counts when no negation or doubt sits just before it ("cannot say whether their budget is flexible" is honest). */
 const DOUBT = /\b(?:not|n't|never|cannot|can't|whether|if|what|how|unknown|unsure|unclear|no one|nobody|inte|kan inte|om|vad|hur)\b/i;
 export function promises(text: string): boolean {
@@ -52,7 +54,7 @@ export function preSend(reply: string, ctx: ReplyContext): PreSendResult {
 
   // H5: at most two questions, except where the reply carries script text
   if (!["scripts", "brief", "practice"].includes(ctx.stage)) {
-    const q = (text.match(/\?/g) ?? []).length; if (q > 2) add("H5", "error", `${q} questions in one reply`);
+    const q = (text.replace(QUOTED, "").match(/\?/g) ?? []).length; if (q > 2) add("H5", "error", `${q} questions in one reply`);
   }
   // H7: no target, anchor or walk-away figures before the gate is open
   if (!ctx.numbersGateOpen) {
