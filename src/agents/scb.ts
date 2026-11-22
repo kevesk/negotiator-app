@@ -11,6 +11,8 @@ export const SCB_DATA_URL = `https://api.scb.se/OV0104/v2beta/api/v2/tables/${SC
 export const SCB_META_URL = "https://api.scb.se/OV0104/v1/doris/sv/ssd/START/AM/AM0110/AM0110A/LoneSpridSektYrk4AN";
 /** Average, median, 10th, 25th, 75th and 90th percentile, in this order. */
 const MEASURES = ["000007CD", "000007CE", "000007CF", "000007CG", "000007CH", "000007CI"] as const;
+/** SCB rejected one request for all six measures in a live test but accepts four or fewer, so they are asked for in two batches. */
+export const BATCHES: readonly (readonly string[])[] = [MEASURES.slice(0, 3), MEASURES.slice(3)];
 export type Sector = "0" | "1-3" | "4-5";
 export interface ScbGroup { code: string; name: string }
 export interface ScbRange { code: string; name: string; year: string; sector: Sector; average?: number; median?: number; p10?: number; p25?: number; p75?: number; p90?: number }
@@ -23,21 +25,23 @@ export function sectorFor(employerType: unknown): Sector {
   if (/private|privat|company|företag|bolag|bank|startup|ab\b/.test(t)) return "4-5";
   return "0";
 }
-export function dataUrl(code: string, sector: Sector): string {
-  const q = [`lang=sv`, `valueCodes[Yrke2012]=${code}`, `valueCodes[Tid]=top(1)`, `valueCodes[Sektor]=${encodeURIComponent(sector)}`, `valueCodes[Kon]=${encodeURIComponent("1+2")}`, `valueCodes[ContentsCode]=${MEASURES.join(",")}`, `outputFormat=csv`];
+export function dataUrl(code: string, sector: Sector, measures: readonly string[] = MEASURES): string {
+  const q = [`lang=sv`, `valueCodes[Yrke2012]=${code}`, `valueCodes[Tid]=top(1)`, `valueCodes[Sektor]=${encodeURIComponent(sector)}`, `valueCodes[Kon]=${encodeURIComponent("1+2")}`, `valueCodes[ContentsCode]=${measures.join(",")}`, `outputFormat=csv`];
   return `${SCB_DATA_URL}?${q.join("&")}`;
 }
 const num = (x: string | undefined): number | undefined => { const v = Number(String(x ?? "").replace(/[\s"]/g, "")); return Number.isFinite(v) && v > 0 ? v : undefined; };
 /** Reads SCB's CSV: the row for both sexes, then the six measures in the order asked. Missing cells ("..") stay undefined. */
-export function parseScbCsv(csv: string, group: ScbGroup, sector: Sector): ScbRange | null {
+export function parseScbCsv(csv: string, group: ScbGroup, sector: Sector, measures: readonly string[] = MEASURES): ScbRange | null {
   const lines = csv.replace(/^﻿/, "").split(/\r?\n/).filter((l) => l.trim());
   if (lines.length < 2) return null;
   const year = lines[0]!.match(/\b(20\d{2})\b/)?.[1] ?? "";
   const row = lines.slice(1).map((l) => l.split(/[,;]/)).find((c) => c[2]?.replace(/"/g, "").trim() === "1+2");
   if (!row) return null;
-  const [average, median, p10, p25, p75, p90] = row.slice(3, 9).map(num);
-  if (median === undefined && average === undefined) return null;
-  return { code: group.code, name: group.name, year, sector, average, median, p10, p25, p75, p90 };
+  const field = { "000007CD": "average", "000007CE": "median", "000007CF": "p10", "000007CG": "p25", "000007CH": "p75", "000007CI": "p90" } as const;
+  const out: ScbRange = { code: group.code, name: group.name, year, sector };
+  measures.forEach((m, i) => { const v = num(row[3 + i]); if (v !== undefined) out[field[m as keyof typeof field]] = v; });
+  if (out.median === undefined && out.average === undefined && out.p25 === undefined && out.p75 === undefined) return null;
+  return out;
 }
 /** SCB's figures as the market range the rest of the app uses, with plain-language provenance. */
 export function toRange(r: ScbRange): MarketRange {
@@ -79,11 +83,15 @@ export async function scbMarketRange(input: { role: string; industry?: string; e
     const sector = sectorFor(input.employerType);
     for (const code of [j.code, j.alt].filter((c): c is string => typeof c === "string" && byCode.has(c))) {
       for (const sec of sector === "0" ? (["0"] as Sector[]) : ([sector, "0"] as Sector[])) { // fall back to all sectors when the sector cell is empty
-        const res = await deps.fetch(dataUrl(code, sec), { signal }); if (!res.ok) continue;
-        const r = parseScbCsv(await res.text(), byCode.get(code)!, sec); if (!r) continue;
+        let r: ScbRange | null = null;
+        for (const batch of BATCHES) {
+          const res = await deps.fetch(dataUrl(code, sec, batch), { signal }); if (!res.ok) { console.log(JSON.stringify({ negotiator_scb: "data_not_ok" })); continue; }
+          const part = parseScbCsv(await res.text(), byCode.get(code)!, sec, batch); if (part) r = { ...(r ?? part), ...part };
+        }
+        if (!r || (r.median === undefined && r.average === undefined)) continue;
         return { range: toRange(r), research: { source: "scb", group: `${r.code} ${r.name}`, sector: sec, year: r.year, figures: r, why: j.why ?? "", note: "National figures for the whole occupation group; the user's city, experience and employer can move them." } };
       }
     }
     return null;
-  } catch { return null; }
+  } catch (e) { console.log(JSON.stringify({ negotiator_scb: "failed", kind: e instanceof Error ? e.name : "unknown" })); return null; }
 }

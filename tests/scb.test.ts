@@ -7,6 +7,9 @@ const CSV = `"Sektor","Yrke2012","Kon","Månadslön 2025","Medianlön 2025","10:
 "0","3312","1+2",47400,43700,30000,35200,53100,66100`;
 const META = { variables: [{ code: "Yrke2012", text: "Yrke (SSYK 2012)", values: ["0000", "2411", "3312", "3313"], valueTexts: ["samtliga yrken", "Revisorer m.fl.", "Banktjänstemän", "Redovisningsekonomer"] }] };
 const bank = { code: "3312", name: "Banktjänstemän" };
+const ALL = ["000007CD", "000007CE", "000007CF", "000007CG", "000007CH", "000007CI"];
+/** Answers like SCB: only the measures named in the URL, in that order. */
+const serve = (u: string, csv = CSV) => { const want = ALL.map((m, i) => [m, i] as const).filter(([m]) => u.includes(m)).map(([, i]) => 3 + i); const [h, r] = csv.split("\n"); const cut = (l: string, keep: number[]) => { const c = l.split(","); return [...c.slice(0, 3), ...keep.map((i) => c[i])].join(","); }; return r === undefined ? h! : `${cut(h!, want)}\n${cut(r, want)}`; };
 
 describe("SCB figures", () => {
   it("reads the both-sexes row and the six measures in order", () => {
@@ -34,18 +37,19 @@ describe("SCB lookup end to end (scripted)", () => {
   const picker = (code: string): ChatModel => ({ async complete(r) { expect(r.purpose).toBe("extract"); expect(r.system).toContain("3312 Banktjänstemän"); return `{"code":"${code}","alt":"","why":"mortgage advice is bank work"}`; } });
   it("a mortgage advisor gets the bank staff range", async () => {
     const urls: string[] = [];
-    const fetchFn = async (u: string) => { urls.push(u); return u === SCB_META_URL ? res(META) : res(CSV); };
+    const fetchFn = async (u: string) => { urls.push(u); return u === SCB_META_URL ? res(META) : res(serve(u)); };
     const r = await scbMarketRange({ role: "Mortgage advisor", industry: "Banking" }, { model: picker("3312"), fetch: fetchFn });
     expect(r!.range).toMatchObject({ p25: 35200, median: 43700, p75: 53100 }); expect(r!.research).toMatchObject({ source: "scb", group: "3312 Banktjänstemän" });
     expect(urls.every((u) => u.startsWith("https://api.scb.se/"))).toBe(true);
+    expect(urls.filter((u) => u.includes("/data?")).length).toBe(2); // two small requests, not one with all six measures
   });
   it("an invented code or an SCB outage gives null, so the web researcher can run", async () => {
-    expect(await scbMarketRange({ role: "x" }, { model: picker("9999"), fetch: async (u: string) => (u === SCB_META_URL ? res(META) : res(CSV)) })).toBeNull();
+    expect(await scbMarketRange({ role: "x" }, { model: picker("9999"), fetch: async (u: string) => (u === SCB_META_URL ? res(META) : res(serve(u))) })).toBeNull();
     resetScbCache();
     expect(await scbMarketRange({ role: "x" }, { model: picker("3312"), fetch: async () => res("", false) })).toBeNull();
   });
   it("an empty private-sector cell falls back to all sectors", async () => {
-    const fetchFn = async (u: string) => (u === SCB_META_URL ? res(META) : u.includes("Sektor]=4-5") ? res(CSV.split("\n")[0]) : res(CSV));
+    const fetchFn = async (u: string) => (u === SCB_META_URL ? res(META) : u.includes("Sektor]=4-5") ? res(CSV.split("\n")[0]) : res(serve(u)));
     const r = await scbMarketRange({ role: "Mortgage advisor", employerType: "private bank" }, { model: picker("3312"), fetch: fetchFn });
     expect(r!.research).toMatchObject({ sector: "0" });
   });
