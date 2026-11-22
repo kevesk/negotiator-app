@@ -20,6 +20,8 @@ export interface SessionState {
   messages: { role: "user" | "assistant"; content: string }[];
   /** Pre-send failures, for the evals (no content kept beyond rule ids). */
   failures: string[];
+  /** True once the user has said they are done; the app then shows the end of the session. */
+  finished?: boolean;
 }
 export const newState = (language: Lang): SessionState => ({ language, stage: "route", modifiers: [], slots: {}, turn: 0, notesUsed: [], outputs: {}, userTexts: [], recompute: [], messages: [], failures: [] });
 export const clone = (s: SessionState): SessionState => structuredClone(s);

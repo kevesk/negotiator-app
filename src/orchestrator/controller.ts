@@ -4,16 +4,16 @@ import type { Stage } from "@/retrieval";
 
 type Json = Record<string, any>;
 const STAGES = FLOW.stages as unknown as Json[];
-export const STAGE_ORDER: Stage[] = ["route", "intake", "position", "market", "numbers", "strategy", "scripts", "brief"];
+export const STAGE_ORDER: Stage[] = ["route", "intake", "position", "interests", "market", "numbers", "strategy", "scripts", "brief"];
 export const SIDEBAR: Record<string, string> = Object.fromEntries(STAGES.filter((s) => s.sidebar).map((s) => [s.id, s.sidebar]));
 SIDEBAR.debrief = "After the meeting";
 export const QUESTIONS_PER_TURN: number = (FLOW.limits as Json).questions_per_turn;
 export const sidebarStep = (stage: Stage): string => SIDEBAR[stage] ?? "Brief";
 
-/** Slots the researcher call must wait for: the user's own numbers come before the market range is shown. */
-const MARKET_PRE = ["own_target", "walk_away", "batna"];
-/** Outputs each stage produces by running a tool; the stage is done only when they exist. */
+/** Outputs each stage produces by running a tool; the stage is done only when they exist (a skip or "no data found" also counts). */
 const STAGE_OUTPUT: Partial<Record<Stage, string>> = { market: "market_range", numbers: "numbers", scripts: "scripts", brief: "brief" };
+/** The value a skipped question holds (Slot-Definitions, "Skipping"). It counts as answered. */
+export const SKIPPED = "unknown";
 
 const def = (id: string) => STAGES.find((s) => s.id === id)!;
 /** Required slots for a stage in the current state (path and phase aware). Order is the order the flow lists them. */
@@ -21,6 +21,10 @@ export function requiredFor(stage: Stage, s: SessionState): string[] {
   const st = def(stage); const path = pathOf(s); const out: string[] = [];
   const add = (l?: string[]) => l?.forEach((x) => !out.includes(x) && out.push(x));
   add(st.requires); add(st.requires_all);
+  // conditional requirements, e.g. "negotiate_scope=package": [package_issues]
+  for (const [cond, ids] of Object.entries((st.requires_if ?? {}) as Record<string, string[]>)) {
+    const [slot, want] = cond.split("="); if (String(slotValue(s, slot!) ?? "").toLowerCase() === want) add(ids);
+  }
   const byPath = st.requires_by_path?.[path ?? ""];
   if (stage === "intake" && byPath) {
     add(byPath.always);
@@ -55,7 +59,8 @@ export function workPlan(s: SessionState): WorkPlan {
   for (const stage of STAGE_ORDER) {
     const g = gate(stage, s);
     let missing = g.missing;
-    if (stage === "market" && g.met) missing = MARKET_PRE.filter((id) => !isSet(s, id));
+    // the user's own view (BATNA, target, walk-away) comes before any market figure
+    if (g.met && def(stage).asks_first && !(STAGE_OUTPUT[stage]! in s.outputs)) missing = (def(stage).asks_first as string[]).filter((id) => !isSet(s, id));
     if (missing.length) {
       const ranked = [...missing].sort((a, b) => tierOf(a, s) - tierOf(b, s));
       return { stage, ask: ranked.slice(0, QUESTIONS_PER_TURN), missing };
@@ -71,6 +76,9 @@ export function workPlan(s: SessionState): WorkPlan {
     if (out && !(out in s.outputs) && !(out === "market_range" && isSet(s, "market_range"))) {
       return { stage, ask: [], missing: [], runTool: ({ market: "researcher", numbers: "numbers_engine", scripts: "script_writer" } as Record<string, Tool>)[stage] };
     }
+    // after the tool: what the user decides from its result (e.g. the first offer from the engine's options)
+    const after = ((def(stage).after_tool ?? []) as string[]).filter((id) => !isSet(s, id) && !(s.outputs[out ?? ""] as { skipped?: boolean } | undefined)?.skipped);
+    if (after.length) return { stage, ask: after.slice(0, QUESTIONS_PER_TURN), missing: after };
   }
   return { stage: "brief", ask: [], missing: [] };
 }

@@ -12,12 +12,14 @@ describe("flow generated from the vault", () => {
   it("asks in tier order: P0 before P1", () => { const p = workPlan(fill(newState("en"), { path: "A" })); expect(p.stage).toBe("intake"); expect(p.ask[0]).toBe("a_phase"); });
   it("intake for path A depends on the phase", () => {
     const pre = fill(newState("en"), { path: "A", a_phase: "pre_offer" }); const off = fill(newState("en"), { path: "A", a_phase: "offer_received" });
-    expect(requiredFor("intake", pre)).toEqual(expect.arrayContaining(["process_stage", "salary_question_type"])); expect(requiredFor("intake", pre)).not.toContain("offer_base");
-    expect(requiredFor("intake", off)).toEqual(expect.arrayContaining(["offer_base", "offer_deadline"]));
+    expect(requiredFor("intake", pre)).toEqual(expect.arrayContaining(["salary_question_type"])); expect(requiredFor("intake", pre)).not.toContain("offer_base");
+    expect(requiredFor("intake", off)).toEqual(expect.arrayContaining(["offer_base"]));
+    // flow v0.3: only the essentials gate the first step
+    expect(requiredFor("intake", off)).not.toEqual(expect.arrayContaining(["industry"])); expect(requiredFor("intake", off)).toEqual(expect.arrayContaining(["role_title", "experience_years", "location"]));
   });
   it("position needs different slots on path A offer and path B", () => {
-    expect(requiredFor("position", fill(newState("en"), { path: "A", a_phase: "offer_received" }))).toEqual(expect.arrayContaining(["offer_base", "offer_pension"]));
-    expect(requiredFor("position", pathB())).toEqual(["achievements", "scope_change", "last_raise", "ask_type"]);
+    expect(requiredFor("position", fill(newState("en"), { path: "A", a_phase: "offer_received" }))).toEqual(expect.arrayContaining(["offer_variable", "offer_pension", "offer_deadline"]));
+    expect(requiredFor("position", pathB())).toEqual(["achievements", "ask_type"]);
   });
   it("sidebar shows six steps", () => { expect(["route", "intake", "position"].map((x) => sidebarStep(x as any))).toEqual(["Situation", "Situation", "Situation"]); expect(sidebarStep("market")).toBe("Market"); expect(sidebarStep("numbers")).toBe("Numbers"); expect(sidebarStep("scripts")).toBe("Scripts"); });
 });
@@ -25,12 +27,18 @@ describe("flow generated from the vault", () => {
 describe("walking the flow", () => {
   const s = pathB();
   it("intake is complete, position next", () => { expect(gate("intake", s).met).toBe(true); expect(workPlan(s).stage).toBe("position"); });
-  it("position (path B) asks for the evidence slots", () => expect(workPlan(pathB()).ask).toEqual(["achievements", "scope_change"]));
+  it("position (path B) asks for the evidence slots", () => expect(workPlan(pathB()).ask).toEqual(["achievements", "ask_type"]));
   fill(s, { achievements: ["led migration"], scope_change: "team of 3", last_raise: "none in 12 months", ask_type: "raise" });
   it("after the evidence slots the evidence builder runs", () => expect(workPlan(s).runTool).toBe("evidence_builder"));
-  it("the user's own numbers come before the market range", () => {
+  it("then interests: what matters, and salary only or a package", () => {
     s.outputs.evidence_summary = { done: true };
-    expect(workPlan(s)).toMatchObject({ stage: "market", ask: ["own_target", "walk_away"] });
+    expect(workPlan(s)).toMatchObject({ stage: "interests" }); expect(workPlan(s).missing).toEqual(["priorities", "negotiate_scope"]);
+    fill(s, { priorities: ["base salary", "flexibility"], negotiate_scope: "package" });
+    expect(workPlan(s)).toMatchObject({ stage: "interests", ask: ["package_issues"] }); // a package needs its items
+    fill(s, { package_issues: ["base salary", "vacation days", "remote days"] });
+  });
+  it("the user's alternative and own numbers come before the market range", () => {
+    expect(workPlan(s)).toMatchObject({ stage: "market", ask: ["batna", "own_target"] });
     fill(s, { own_target: 50000, walk_away: 46000, batna: "stay in current job" });
     expect(workPlan(s)).toMatchObject({ stage: "market", runTool: "researcher" });
   });
@@ -38,9 +46,10 @@ describe("walking the flow", () => {
     setSlot(s, "market_range", { p25: 45000, median: 50000, p75: 56000, confidence: "medium" }, "researcher"); s.outputs.market_range = { p25: 45000 };
     expect(workPlan(s)).toMatchObject({ stage: "numbers", runTool: "numbers_engine" });
   });
-  it("then strategy asks for priorities, counterpart and risk tolerance in tier order", () => {
-    s.outputs.numbers = { done: true }; const p = workPlan(s);
-    expect(p.stage).toBe("strategy"); expect(p.missing).toEqual(expect.arrayContaining(["priorities", "counterpart", "risk_tolerance", "manager_stance", "budget_timing"]));
+  it("then the user chooses the first offer", () => { s.outputs.numbers = { done: true }; expect(workPlan(s)).toMatchObject({ stage: "numbers", ask: ["first_offer"] }); });
+  it("then strategy: the counterpart, and for a package the scoring and the packages", () => {
+    fill(s, { first_offer: 53000 }); const p = workPlan(s);
+    expect(p.stage).toBe("strategy"); expect(p.missing).toEqual(["counterpart", "issue_weights", "packages"]);
   });
   it("an assumed value counts as present (explicitly assumed)", () => { const t = pathB(); assume(t, "employment_terms", "unknown, assumed permanent"); expect(gate("intake", t).met).toBe(true); });
 });
@@ -56,7 +65,7 @@ describe("going back and stale values", () => {
     setSlot(s, "role_title", "Senior credit analyst", "user"); expect(s.slots.market_range).toBeUndefined(); expect(s.outputs.market_range).toBeUndefined();
   });
   it("setting the same value again changes nothing", () => { const s = pathB(); expect(setSlot(s, "role_title", "Credit analyst", "user")).toBe(false); expect(s.recompute).toEqual([]); });
-  it("a stale slot must be confirmed before use", () => { const s = pathB(); markStale(s, "review_date"); expect(gate("intake", s).missing).toContain("review_date"); });
+  it("a stale slot must be confirmed before use", () => { const s = pathB(); markStale(s, "current_base"); expect(gate("intake", s).missing).toContain("current_base"); });
 });
 
 describe("modifiers", () => {
@@ -68,7 +77,7 @@ describe("modifiers", () => {
 });
 
 describe("extraction", () => {
-  it("parses a clean reply", () => expect(parseExtraction('{"slots":{"path":{"value":"B"},"own_target":{"value":52000,"unit":"SEK/month"}},"modifiers":["competing_offer"]}')).toEqual({ slots: { path: { value: "B", unit: undefined }, own_target: { value: 52000, unit: "SEK/month" } }, modifiers: ["competing_offer"], situations: [] }));
+  it("parses a clean reply", () => expect(parseExtraction('{"slots":{"path":{"value":"B"},"own_target":{"value":52000,"unit":"SEK/month"}},"modifiers":["competing_offer"]}')).toEqual({ slots: { path: { value: "B", unit: undefined }, own_target: { value: 52000, unit: "SEK/month" } }, modifiers: ["competing_offer"], situations: [], done: false }));
   it("survives prose around the JSON and drops unknown ids, derived ids, nulls and bad modifiers", () => {
     const e = parseExtraction('Sure! {"slots":{"bogus":{"value":1},"anchor":{"value":5},"walk_away":{"value":null},"channel":{"value":"video"}},"modifiers":["nonsense"]} done');
     expect(Object.keys(e.slots)).toEqual(["channel"]); expect(e.modifiers).toEqual([]);
@@ -86,10 +95,14 @@ describe("numbers tool", () => {
     expect(r.net.basis).toBe("municipality"); expect(r.net.target.net).toBe(50000 - r.net.target.tax);
     expect(r.zopa.overlap).toBe("positive"); expect(r.zopa.confidence).toBe("medium");
   });
-  it("says what is missing instead of guessing", () => expect(runNumbersTool(fill(newState("en"), { own_target: 50000 }))).toEqual({ needs: ["walk_away", "market_range"] }));
+  it("says what is missing instead of guessing", () => expect(runNumbersTool(fill(newState("en"), { own_target: 50000 }))).toEqual({ needs: ["walk_away"] }));
+  it("works without market data and says so (flow v0.3)", () => {
+    const r = runNumbersTool(fill(newState("en"), { own_target: 50000, walk_away: 46000 })); if ("needs" in r) throw new Error();
+    expect(r.flags).toContain("no_market_data"); expect(r.defaultAnchor).toMatchObject({ id: "above_target", amount: 52500, assumed: true });
+  });
   it("average-only data gives hold and no range", () => {
     const s = fill(newState("en"), { own_target: 50000, walk_away: 47000 }); setSlot(s, "market_range", { median: 50000, averageOnly: true }, "researcher");
-    const r = runNumbersTool(s); if ("needs" in r) throw new Error(); expect(r.anchorOptions.map((o) => o.id)).toEqual(["hold"]); expect(r.flags).toContain("average_only"); expect(r.zopa.overlap).toBe("unknown");
+    const r = runNumbersTool(s); if ("needs" in r) throw new Error(); expect(r.anchorOptions.map((o) => o.id)).toEqual(["hold", "above_target"]); expect(r.flags).toContain("average_only"); expect(r.zopa.overlap).toBe("unknown");
   });
   it("an unknown municipality falls back to the national average and says so", () => {
     const s = fill(newState("en"), { own_target: 50000, walk_away: 47000, tax_municipality: "Atlantis" }); setSlot(s, "market_range", { p25: 1, p75: 60000 }, "researcher");
@@ -144,16 +157,16 @@ describe("turn loop", () => {
     expect(r.usedFallback).toBe(true);
   });
   it("runs the numbers engine when the gate is met and lets the reply use its figures", async () => {
-    const s = pathB(); fill(s, { achievements: ["a"], scope_change: "b", last_raise: "c", ask_type: "raise", own_target: 50000, walk_away: 47000, batna: "stay" });
+    const s = pathB(); fill(s, { achievements: ["a"], scope_change: "b", last_raise: "c", ask_type: "raise", priorities: ["pay"], negotiate_scope: "salary only", own_target: 50000, walk_away: 47000, batna: "stay" });
     s.outputs.evidence_summary = {}; setSlot(s, "market_range", { p25: 45000, median: 50000, p75: 56000, confidence: "medium" }, "researcher"); s.outputs.market_range = {};
     const m = scripted("{}", ["Your target is 50 000 kr [user]. An opening of 53 000 kr [computed] leaves room for three steps of 1 500, 900 and 600 kr [computed]. Shall we look at what you would ask for in return for each step?"]);
     const r = await runTurn({ model: m }, s, "ok");
-    expect(r.state.outputs.numbers).toBeDefined(); expect(r.plan.stage).toBe("strategy"); expect(r.usedFallback).toBe(false);
+    expect(r.state.outputs.numbers).toBeDefined(); expect(r.plan).toMatchObject({ stage: "numbers", ask: ["first_offer"] }); expect(r.usedFallback).toBe(false);
   });
   it("uses a market-unavailable message when no researcher exists", async () => {
-    const s = pathB(); fill(s, { achievements: ["a"], scope_change: "b", last_raise: "c", ask_type: "raise", own_target: 50000, walk_away: 47000, batna: "stay" }); s.outputs.evidence_summary = {};
+    const s = pathB(); fill(s, { achievements: ["a"], scope_change: "b", last_raise: "c", ask_type: "raise", priorities: ["pay"], negotiate_scope: "salary only", own_target: 50000, walk_away: 47000, batna: "stay" }); s.outputs.evidence_summary = {};
     const m = scripted("{}", ["I could not find market data. Do you have job ads or union statistics for this role?"]);
     const r = await runTurn({ model: m }, s, "go ahead");
-    expect((r.state.outputs.market_range as any).unavailable).toBe(true); expect(r.plan.ask).toContain("market_range"); expect(m.calls.find((c) => c.purpose === "reply")!.system).toContain("No market data could be found");
+    expect((r.state.outputs.market_range as any).unavailable).toBe(true); expect(r.plan.ask).not.toContain("market_range"); expect(r.plan.stage).not.toBe("market"); // one search: no data moves the flow on expect(m.calls.find((c) => c.purpose === "reply")!.system).toContain("No market data could be found");
   });
 });
