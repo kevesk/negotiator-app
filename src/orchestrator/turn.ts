@@ -12,6 +12,7 @@ import { reviewBrief, FINDING_LABEL, type CriticReport } from "@/agents/critic";
 import { PREP_BRIEF_TEMPLATE, PREP_BRIEF_ADDITIONS, SCRIPT_BLOCK_TEMPLATE as SCRIPT_FORMAT } from "@/agents/templates.generated";
 import { SLOT_DEFS } from "./flow.generated";
 import type { ChatModel } from "./model";
+import { situationCatalogue, situationGuide, isSituation } from "@/retrieval/situation";
 import { COACH_STYLE, OUTPUT_FORMAT, splitTrailer, finalSuggestions, nextStepText } from "./guide";
 
 export interface TurnDeps {
@@ -38,6 +39,7 @@ export interface TurnResult {
 }
 
 const MAX_NOTES_SEEN = 40;
+const SITUATION_CATALOGUE = situationCatalogue();
 
 function stateSummary(s: SessionState): string {
   const rows = Object.entries(s.slots).filter(([, v]) => !v.stale).map(([k, v]) => `- ${k}: ${JSON.stringify(v.value)}${v.unit ? " " + v.unit : ""} [${v.source}]${v.note ? " (" + v.note + ")" : ""}`);
@@ -55,7 +57,7 @@ export async function runTurn(deps: TurnDeps, prev: SessionState, message: strin
   if (message.includes("SESSION SUMMARY v1")) { const r0 = fromSummary(message, s); confirm = r0.confirm; if (!r0.ok) s.userTexts.push("(the pasted summary could not be read)"); }
   // 1-2. update the state from the message; changed slots invalidate their dependants
   let plan = workPlan(s);
-  const ext = await extractSlots(deps.model, s, message, plan.missing);
+  const ext = await extractSlots(deps.model, s, message, plan.missing, { catalogue: SITUATION_CATALOGUE, isSituation });
   applyExtraction(s, ext);
   s.modifiers = detectModifiers(s);
   plan = workPlan(s);
@@ -84,6 +86,9 @@ export async function runTurn(deps: TurnDeps, prev: SessionState, message: strin
   // 5. retrieve notes for the stage and active modifiers
   const query = [message, STAGE_GOAL[plan.stage], plan.ask.join(" ")].join(" ");
   const r = retrieve(query, { agent: "coach", path: slotValue<"A" | "B">(s, "path") ?? "A", stage: plan.stage, modifiers: s.modifiers, allowDraft: deps.allowDraft ?? true, today: deps.today });
+  const rs = { agent: "coach" as const, path: slotValue<"A" | "B">(s, "path") ?? "A", stage: plan.stage, modifiers: s.modifiers, allowDraft: deps.allowDraft ?? true, today: deps.today };
+  const guides = ext.situations.map((n) => situationGuide(n, rs)).filter((g): g is NonNullable<typeof g> => g !== null);
+  for (const g of guides) if (!s.notesUsed.includes(g.note)) s.notesUsed.push(g.note);
   for (const i of r.items) if (!s.notesUsed.includes(i.note)) s.notesUsed.push(i.note);
   if (s.notesUsed.length > MAX_NOTES_SEEN) s.notesUsed = s.notesUsed.slice(-MAX_NOTES_SEEN);
 
@@ -92,7 +97,9 @@ export async function runTurn(deps: TurnDeps, prev: SessionState, message: strin
   const system = [
     buildSystemPrompt({ lang: s.language, path: slotValue(s, "path"), stage: plan.stage, modifiers: s.modifiers }),
     "", COACH_STYLE, "", OUTPUT_FORMAT, "", `Stage goal: ${STAGE_GOAL[plan.stage]}`,
-    "First respond to what the user just raised. If the retrieved notes describe a move for that situation (questions to ask, an exercise to offer, a check to make, a point to explain), make that move first; its questions come before the facts listed below.",
+    guides.length
+      ? `Situation guidance for the user's latest message (from the knowledge base; follow it before anything else: make the moves it describes, ask the questions it says to ask, offer what it says to offer; never name the note):\n${guides.map((g) => `### ${g.title}\n${g.text}`).join("\n\n")}\n\nRespond to that situation first; its questions come before the facts listed below.`
+      : "First respond to what the user just raised. If the retrieved notes describe a move for that situation (questions to ask, an exercise to offer, a check to make, a point to explain), make that move first; its questions come before the facts listed below.",
     plan.ask.length ? `Next facts to collect (ask for these now if your reply has room; at most two questions in total, and anything left waits for a later turn):\n${asks}` : "Do not ask for new facts: present the results below and end with a next step.",
     confirm.length ? `\nThe user pasted a session summary. Briefly confirm these time-sensitive items before relying on them: ${confirm.join(", ")}.` : "",
     "", "What you know so far:", stateSummary(s),
@@ -108,7 +115,7 @@ export async function runTurn(deps: TurnDeps, prev: SessionState, message: strin
   let { body: draft, suggestions: offered } = splitTrailer(raw);
 
   // 7. pre-send checks: revise once, then send the safest version
-  const sources = [...s.userTexts, ...r.items.map((i) => i.text), JSON.stringify(s.outputs), ...Object.values(s.slots).filter((v) => !v.stale).map((v) => JSON.stringify(v.value))];
+  const sources = [...s.userTexts, ...r.items.map((i) => i.text), ...guides.map((g) => g.text), JSON.stringify(s.outputs), ...Object.values(s.slots).filter((v) => !v.stale).map((v) => JSON.stringify(v.value))];
   const ctx = { stage: plan.stage, sources, numbersGateOpen: numbersGateOpen(s), userNumbers: [...allowedValues(s.userTexts)] };
   let check = preSend(draft, ctx); let usedFallback = false; let rejected: TurnResult["rejected"];
   if (!check.ok) {
