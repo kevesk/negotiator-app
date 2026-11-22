@@ -12,9 +12,13 @@ const TAGS = "Tag every figure with [user], [researcher], [computed] or [assumed
 const NOTES = "Notes you are given may be marked UNVERIFIED, POSSIBLY OUTDATED or LOW CONFIDENCE: say so when you use them. Notes marked REASONING ONLY shape your thinking but are never named, quoted or retold.";
 
 /** The system prompt sent on every turn: persona, the hard rules, language, and the current state. Rules are never left to retrieval (D66). */
+/** The part of the coach prompt that only changes with the language: rules, persona, tags, notes guidance (cached by the API client). */
+export function stableSystemPrompt(lang: PromptState["lang"]): string {
+  return [HARD_RULES, "", "Persona:", PERSONA, "", TAGS, NOTES, LANGUAGE[lang]].join("\n");
+}
+export function stateLine(s: PromptState): string {
+  return `Current state: path ${s.path ?? "not yet set"}, stage ${s.stage}${s.modifiers?.length ? `, modifiers ${s.modifiers.join(", ")}` : ""}.`;
+}
 export function buildSystemPrompt(s: PromptState): string {
-  return [
-    HARD_RULES, "", "Persona:", PERSONA, "", TAGS, NOTES, LANGUAGE[s.lang], "",
-    `Current state: path ${s.path ?? "not yet set"}, stage ${s.stage}${s.modifiers?.length ? `, modifiers ${s.modifiers.join(", ")}` : ""}.`,
-  ].join("\n");
+  return [stableSystemPrompt(s.lang), "", stateLine(s)].join("\n");
 }

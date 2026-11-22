@@ -1,6 +1,6 @@
 import { retrieve, renderForPrompt, type Retrieved } from "@/retrieval";
 import { preSend, FALLBACK, allowedValues, type Finding } from "@/checks";
-import { buildSystemPrompt } from "@/agents/prompt";
+import { stableSystemPrompt, stateLine } from "@/agents/prompt";
 import { clone, setSlot, slotValue, type SessionState } from "./state";
 import { detectModifiers, numbersGateOpen, sidebarStep, STAGE_GOAL, workPlan, type Tool, type WorkPlan } from "./controller";
 import { extractSlots, applyExtraction } from "./extract";
@@ -96,9 +96,11 @@ export async function runTurn(deps: TurnDeps, prev: SessionState, message: strin
 
   // 6. assemble the prompt and draft
   const asks = plan.ask.map((id) => `- ${id}${SLOT_DEFS[id]?.ask ? `: e.g. "${SLOT_DEFS[id]!.ask}"` : ""}`).join("\n");
+  // the part that is the same on every turn in this language goes first, so the API can cache it
+  const cachePrefix = [stableSystemPrompt(s.language), "", COACH_STYLE, "", OUTPUT_FORMAT, ""].join("\n");
   const system = [
-    buildSystemPrompt({ lang: s.language, path: slotValue(s, "path"), stage: plan.stage, modifiers: s.modifiers }),
-    "", COACH_STYLE, "", OUTPUT_FORMAT, "", `Stage goal: ${STAGE_GOAL[plan.stage]}`,
+    cachePrefix + stateLine({ lang: s.language, path: slotValue(s, "path"), stage: plan.stage, modifiers: s.modifiers }),
+    "", `Stage goal: ${STAGE_GOAL[plan.stage]}`,
     guides.length
       ? `Situation guidance for the user's latest message (from the knowledge base; follow it before anything else: make the moves it describes, ask the questions it says to ask, offer what it says to offer; never name the note):\n${guides.map((g) => `### ${g.title}\n${g.text}`).join("\n\n")}\n\nRespond to that situation first; its questions come before the facts listed below.`
       : "First respond to what the user just raised. If the retrieved notes describe a move for that situation (questions to ask, an exercise to offer, a check to make, a point to explain), make that move first; its questions come before the facts listed below.",
@@ -113,7 +115,7 @@ export async function runTurn(deps: TurnDeps, prev: SessionState, message: strin
     r.items.length ? `\nNotes you may use:\n${renderForPrompt(r.items)}` : "\nNo relevant notes were found: if you answer without backing, label it as a guess (rule 6).",
   ].filter((x) => x !== "").join("\n");
   const messages = [...s.messages, { role: "user" as const, content: message }];
-  let raw = await deps.model.complete({ purpose: "reply", system, messages });
+  let raw = await deps.model.complete({ purpose: "reply", system, cachePrefix, messages });
   let { body: draft, suggestions: offered } = splitTrailer(raw);
 
   // 7. pre-send checks: revise once, then send the safest version
@@ -122,7 +124,7 @@ export async function runTurn(deps: TurnDeps, prev: SessionState, message: strin
   let check = preSend(draft, ctx); let usedFallback = false; let rejected: TurnResult["rejected"];
   if (!check.ok) {
     const fix = check.findings.filter((f) => f.severity === "error").map((f) => `${f.rule}: ${f.detail}`).join("; ");
-    raw = await deps.model.complete({ purpose: "rewrite", system, messages: [...messages, { role: "assistant", content: raw }, { role: "user", content: `Rewrite your last reply so it fixes this and changes nothing else: ${fix}. Output only the new reply, followed by the suggestions block.` }] });
+    raw = await deps.model.complete({ purpose: "rewrite", system, cachePrefix, messages: [...messages, { role: "assistant", content: raw }, { role: "user", content: `Rewrite your last reply so it fixes this and changes nothing else: ${fix}. Output only the new reply, followed by the suggestions block.` }] });
     ({ body: draft, suggestions: offered } = splitTrailer(raw));
     check = preSend(draft, ctx);
     if (!check.ok) { rejected = { draft, errors: check.findings.filter((f) => f.severity === "error").map((f) => `${f.rule}: ${f.detail}`) }; s.failures.push(...check.findings.filter((f) => f.severity === "error").map((f) => f.rule)); draft = FALLBACK[s.language]; offered = []; usedFallback = true; }
@@ -135,7 +137,7 @@ export async function runTurn(deps: TurnDeps, prev: SessionState, message: strin
     const fixable = report.findings.filter((f) => f.severity !== "note");
     if (fixable.length) {
       const list = fixable.map((f) => `- ${f.id} (${f.where}): ${f.what}. ${f.suggested_fix}`).join("\n");
-      const rawFix = await deps.model.complete({ purpose: "rewrite", system, messages: [...messages, { role: "assistant", content: raw }, { role: "user", content: `A reviewer found these problems in your brief. Fix them and change nothing else, keeping the template. Output only the new brief, followed by the suggestions block.\n${list}` }] });
+      const rawFix = await deps.model.complete({ purpose: "rewrite", system, cachePrefix, messages: [...messages, { role: "assistant", content: raw }, { role: "user", content: `A reviewer found these problems in your brief. Fix them and change nothing else, keeping the template. Output only the new brief, followed by the suggestions block.\n${list}` }] });
       const fixed = splitTrailer(rawFix);
       if (fixed.body && preSend(fixed.body, ctx).ok) { draft = fixed.body; offered = fixed.suggestions; report = await reviewBrief(deps.model, ctxFor(draft)); }
     }

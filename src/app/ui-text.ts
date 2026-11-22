@@ -18,7 +18,8 @@ export const T = {
     copy: "Copy", copied: "Copied", savePdf: "Save as PDF", briefReady: "Your brief is ready", ratingQ: "Was this brief useful?", ratings: { useful: "Useful", somewhat: "Somewhat", not_useful: "Not useful" }, ratingThanks: "Thanks, noted anonymously.",
     placeholder: "Or write your own answer…", send: "Send", thinking: "Thinking…", newSession: "New session", summary: "Download summary",
     steps: ["Situation", "Market", "Numbers", "Strategy", "Scripts", "Brief"],
-    errors: { not_configured: "The service is not set up yet (missing API key).", model_error: "The AI service did not answer. Please try again.", message_too_long: "That message is too long. Please shorten it.", generic: "Something went wrong. Please try again." },
+    errors: { not_configured: "The service is not set up yet (missing API key).", model_error: "The AI service did not answer. Please try again.", message_too_long: "That message is too long. Please shorten it.", generic: "Something went wrong. Please try again.", access_required: "This test version needs an access code. Start a new session and enter it.", rate_limited: "You have reached the message limit for now. Try again in about {m} minutes. Your session is kept.", busy: "The service has reached its limit for this hour. Try again in about {m} minutes. Your session is kept." },
+    accessLabel: "Access code", accessHint: "This is a test version. Enter the code you were given.", accessWrong: "That code is not right.", accessTooMany: "Too many attempts. Try again in about {m} minutes.",
     disclaimer: "Preparation support, not legal or financial advice.",
   },
   sv: {
@@ -38,7 +39,8 @@ export const T = {
     copy: "Kopiera", copied: "Kopierat", savePdf: "Spara som PDF", briefReady: "Ditt underlag är klart", ratingQ: "Var underlaget användbart?", ratings: { useful: "Användbart", somewhat: "Delvis", not_useful: "Inte användbart" }, ratingThanks: "Tack, noterat anonymt.",
     placeholder: "Eller skriv ditt eget svar…", send: "Skicka", thinking: "Tänker…", newSession: "Ny session", summary: "Ladda ner sammanfattning",
     steps: ["Situation", "Marknad", "Siffror", "Strategi", "Manus", "Underlag"],
-    errors: { not_configured: "Tjänsten är inte konfigurerad än (API-nyckel saknas).", model_error: "AI-tjänsten svarade inte. Försök igen.", message_too_long: "Meddelandet är för långt. Förkorta det.", generic: "Något gick fel. Försök igen." },
+    errors: { not_configured: "Tjänsten är inte konfigurerad än (API-nyckel saknas).", model_error: "AI-tjänsten svarade inte. Försök igen.", message_too_long: "Meddelandet är för långt. Förkorta det.", generic: "Något gick fel. Försök igen.", access_required: "Den här testversionen kräver en åtkomstkod. Starta en ny session och ange den.", rate_limited: "Du har nått gränsen för antal meddelanden just nu. Försök igen om ungefär {m} minuter. Din session finns kvar.", busy: "Tjänsten har nått sin gräns för den här timmen. Försök igen om ungefär {m} minuter. Din session finns kvar." },
+    accessLabel: "Åtkomstkod", accessHint: "Det här är en testversion. Ange koden du har fått.", accessWrong: "Koden stämmer inte.", accessTooMany: "För många försök. Försök igen om ungefär {m} minuter.",
     disclaimer: "Förberedelsestöd, inte juridisk eller finansiell rådgivning.",
   },
 } as const;
