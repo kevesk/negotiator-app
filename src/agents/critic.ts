@@ -14,7 +14,7 @@ export interface BriefContext {
   /** Texts the brief's figures may come from (slots, tool outputs). */
   sources: string[];
 }
-export const MAX_WORDS = 800;
+export const MAX_WORDS = 1100;
 const IDS: CheckId[] = ["placeholder", "numbers", "tags", "market", "sources", "guesses", "consistency", "recommendation", "leaks", "honesty", "completeness", "length"];
 
 /** Plain-language labels for the user, one per check. Owned by code so no model text is shown as a finding. */
@@ -23,6 +23,8 @@ export const FINDING_LABEL: Record<"en" | "sv", Record<CheckId, string>> = {
   sv: { placeholder: "ett fält i underlaget lämnades tomt", numbers: "en siffra kunde inte kopplas till dina uppgifter eller verktygen", tags: "en siffra saknar källtagg", market: "marknadsdatan är ofullständig eller överdriven", sources: "en källa eller ett datum saknas", guesses: "en gissning kan visas som fakta", consistency: "dina siffror eller manus stämmer inte helt överens", recommendation: "en rekommendationskontroll är inte uppfylld", leaks: "något privat eller förbjudet finns i texten", honesty: "en rad kan säga något du inte sanningsenligt kan säga", completeness: "en obligatorisk del saknas", length: "underlaget är längre än 800 ord" },
 };
 
+/** Section numbers in the prep brief template (Output-Templates, template 5, D113): the numbers table, and the parts the employer hears. */
+export const SECTION = { numbers: 2, toEmployer: [7, 8, 9] } as const;
 /** Sections of the brief by their numbers ("## 5. ..."), language-independent. */
 export function sectionOf(brief: string, n: number): string {
   const m = brief.match(new RegExp(`^##\\s*${n}\\.[^\\n]*\\n([\\s\\S]*?)(?=^##\\s*\\d+\\.|$(?![\\s\\S]))`, "m")); return m?.[1] ?? "";
@@ -38,22 +40,22 @@ export function codeChecks(c: BriefContext): CriticFinding[] {
   const untraced = extractFigures(c.brief).filter((f) => !loose(f.value));
   if (untraced.length) add("numbers", "must_fix", "brief", `figures not found in the state or tool results: ${[...new Set(untraced.map((f) => f.raw.trim()))].slice(0, 5).join(", ")}`, "Use only figures from the state and tool results, unchanged.");
   // the walk-away may appear in the numbers table but never in the text meant for the employer
-  const say = sectionOf(c.brief, 5) + "\n" + sectionOf(c.brief, 6);
+  const say = SECTION.toEmployer.map((n) => sectionOf(c.brief, n)).join("\n");
   if (c.walkAway !== undefined) {
     const hit = [...say.matchAll(/\d[\d  .,]*\d|\d/g)].map((m) => parseNumber(m[0])).some((v) => v !== null && near(v, c.walkAway!));
-    if (hit) add("leaks", "must_fix", "section 5 or 6", "the walk-away figure appears in text meant for the employer", "Remove the walk-away from the scripts and the concession table.");
+    if (hit) add("leaks", "must_fix", "sections 7 to 9", "the walk-away figure appears in text meant for the employer", "Remove the walk-away from the scripts and the concession table.");
   }
   const pre = preSend(c.brief, { stage: "brief", sources: [...c.sources, String(c.target ?? ""), String(c.walkAway ?? "")], numbersGateOpen: true });
   for (const f of pre.findings) if (f.severity === "error" && f.rule !== "H2") add(f.rule === "H20" || f.rule === "H21" ? "leaks" : "honesty", "must_fix", "brief", f.detail, "Remove or reword it.");
-  if (c.target !== undefined && c.walkAway !== undefined && c.walkAway > c.target) add("consistency", "must_fix", "section 1", "the walk-away is above the target", "Show the conflict to the user and do not present it as settled.");
-  if (c.walkAway !== undefined && c.batna !== undefined && c.walkAway < c.batna) add("consistency", "should_fix", "section 1", "the walk-away is below the best alternative", "Say so openly in the brief.");
-  const rows = sectionOf(c.brief, 1).split("\n").filter((l) => /^\|/.test(l) && /\d{4}|\d\s?\d{3}/.test(l));
+  if (c.target !== undefined && c.walkAway !== undefined && c.walkAway > c.target) add("consistency", "must_fix", "section 2", "the walk-away is above the target", "Show the conflict to the user and do not present it as settled.");
+  if (c.walkAway !== undefined && c.batna !== undefined && c.walkAway < c.batna) add("consistency", "should_fix", "section 2", "the walk-away is below the best alternative", "Say so openly in the brief.");
+  const rows = sectionOf(c.brief, SECTION.numbers).split("\n").filter((l) => /^\|/.test(l) && /\d{4}|\d\s?\d{3}/.test(l));
   const untagged = rows.filter((l) => !/\[(user|researcher|computed|assumed)\]/i.test(l));
-  if (untagged.length) add("tags", "should_fix", "section 1", `${untagged.length} row(s) with a figure have no source tag`, "Add [user], [researcher], [computed] or [assumed] to every figure.");
+  if (untagged.length) add("tags", "should_fix", "section 2", `${untagged.length} row(s) with a figure have no source tag`, "Add [user], [researcher], [computed] or [assumed] to every figure.");
   if (!/legal or financial advice|juridisk|finansiell rådgivning|rådgivning/i.test(c.brief)) add("completeness", "should_fix", "end", "the preparation-support line is missing", "End with the line that this is preparation support, not legal or financial advice.");
   if (!/- \[ \]|next step|nästa steg/i.test(c.brief)) add("completeness", "should_fix", "end", "no next step", "Add the checklist and a clear next step.");
   const words = c.brief.split(/\s+/).filter(Boolean).length;
-  if (words > MAX_WORDS) add("length", "should_fix", "brief", `${words} words`, "Cut to 500 to 800 words: only what the user needs, no fluff.");
+  if (words > MAX_WORDS) add("length", "should_fix", "brief", `${words} words`, "Cut to 700 to 1,100 words: only what the user needs, no fluff.");
   return out;
 }
 
