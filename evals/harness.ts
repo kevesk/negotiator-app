@@ -119,7 +119,7 @@ export async function runCase(c: EvalCase, run: number, deps: CaseDeps, setupCac
 }
 
 export interface Gate { pass: boolean; criticalFailures: string[]; majorFailures: string[]; minorFailures: string[]; pendingHuman: string[]; errors: string[]; allowedMisses: string[] }
-/** Release gate (Eval-Method, D105): a critical case may fail a run only on the judge's wording and only once in five runs; any failed code check, any fallback reply or a second miss blocks. Then: no major case fails on both of its runs; minor failures and human reviews are reported. */
+/** Release gate (Eval-Method, D106): a critical case may fail a run only on the judge's wording and only once in five runs; any failed code check, any fallback reply or a second miss blocks. Then: no major case fails on both of its runs; minor failures and human reviews are reported. */
 export function evaluateGate(cases: EvalCase[], results: RunResult[]): Gate {
   const byCase = new Map<string, RunResult[]>(); for (const r of results) byCase.set(r.caseId, [...(byCase.get(r.caseId) ?? []), r]);
   const g: Gate = { pass: true, criticalFailures: [], majorFailures: [], minorFailures: [], pendingHuman: [], errors: [], allowedMisses: [] };
