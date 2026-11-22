@@ -20,11 +20,30 @@ export default function Home() {
   const [copied, setCopied] = useState<number | null>(null);
   const [rated, setRated] = useState(false);
   const [printText, setPrintText] = useState<string | null>(null);
+  // access code for the test version (D108): asked once on the start screen, remembered in this browser only
+  const [needCode, setNeedCode] = useState(false);
+  const [code, setCode] = useState("");
+  const [codeError, setCodeError] = useState("");
   const end = useRef<HTMLDivElement>(null);
   const t = T[lang];
 
   useEffect(() => { try { const l = navigator.language.toLowerCase().startsWith("sv") ? "sv" : "en"; setLang(l); } catch { /* default */ } }, []);
   useEffect(() => { end.current?.scrollIntoView({ behavior: "smooth" }); }, [log, busy]);
+  useEffect(() => {
+    try { setCode(localStorage.getItem("negotiator_access") ?? ""); } catch { /* storage blocked: the code is asked again */ }
+    fetch("/api/access").then((r) => r.json()).then((j) => setNeedCode(j.required === true)).catch(() => { /* if unsure, the chat answer will tell */ });
+  }, []);
+  const fill = (s: string, m: unknown) => s.replace("{m}", String(typeof m === "number" ? m : 60));
+  async function begin() {
+    if (!needCode) return start();
+    setCodeError("");
+    try {
+      const r = await fetch("/api/access", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ code }) });
+      const j = await r.json().catch(() => ({}));
+      if (r.ok) { try { localStorage.setItem("negotiator_access", code.trim()); } catch { /* kept in memory for this visit */ } start(); }
+      else setCodeError(r.status === 429 ? fill(t.accessTooMany, j.retryAfterMinutes) : t.accessWrong);
+    } catch { setCodeError(t.errors.generic); }
+  }
 
   const start = () => {
     const s = newState(lang); s.messages.push({ role: "assistant", content: t.opening });
@@ -36,9 +55,9 @@ export default function Home() {
     const message = (override ?? text).trim(); if (!message || busy || !state) return;
     setText(""); setChips([]); setBusy(true); setLog((l) => [...l, { role: "user", content: message }]);
     try {
-      const res = await fetch("/api/chat", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ message, state }) });
+      const res = await fetch("/api/chat", { method: "POST", headers: { "content-type": "application/json", "x-access-code": code.trim() }, body: JSON.stringify({ message, state }) });
       const j = await res.json();
-      if (!res.ok) { const e = (T[lang].errors as Record<string, string>)[j.error] ?? t.errors.generic; setLog((l) => [...l, { role: "assistant", content: e, error: true }]); }
+      if (!res.ok) { const e = fill((T[lang].errors as Record<string, string>)[j.error] ?? t.errors.generic, j.retryAfterMinutes); if (j.error === "access_required") { setNeedCode(true); try { localStorage.removeItem("negotiator_access"); } catch { /* nothing stored */ } } setLog((l) => [...l, { role: "assistant", content: e, error: true }]); }
       else { setState(j.state); setStep(STEP_OF[j.stage] ?? 0); setNext(j.next ?? ""); setChips(Array.isArray(j.suggestions) ? j.suggestions.slice(0, 3) : []); setLog((l) => [...l, { role: "assistant", content: j.reply, brief: j.brief === true }]); if (j.brief) setRated(false); }
     } catch { setLog((l) => [...l, { role: "assistant", content: t.errors.generic, error: true }]); }
     finally { setBusy(false); }
@@ -68,7 +87,15 @@ export default function Home() {
       <section className="card terms">
         <h2>{t.termsHead}</h2><p className="tag">{t.tagline}</p>
         <ul>{t.terms.map((x) => <li key={x}>{x}</li>)}</ul>
-        <div><button className="btn primary" onClick={start}>{t.start}</button></div>
+        {needCode && (
+          <div className="access">
+            <label htmlFor="access-code">{t.accessLabel}</label>
+            <p className="hint">{t.accessHint}</p>
+            <input id="access-code" type="password" autoComplete="off" value={code} onChange={(e) => setCode(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") void begin(); }} aria-invalid={!!codeError} aria-describedby={codeError ? "access-error" : undefined} />
+            {codeError && <p id="access-error" className="error" role="alert">{codeError}</p>}
+          </div>
+        )}
+        <div><button className="btn primary" onClick={() => void begin()} disabled={needCode && !code.trim()}>{t.start}</button></div>
       </section>
     </main>
   );
