@@ -14,18 +14,37 @@ export function normaliseMessages(msgs: ChatMessage[]): ChatMessage[] {
   while (out.length && out[0]!.role !== "user") out.shift();
   return out;
 }
+/** The cheaper model for the small jobs: reading facts out of a message, and the eval harness's setup and grading (cost decision, 2026-11-22). */
+export const FAST_MODEL = "claude-haiku-5-5";
+const FAST_PURPOSES = new Set<ModelRequest["purpose"]>(["extract", "setup", "judge"]);
+const MAX_TOKENS: Record<ModelRequest["purpose"], number> = { extract: 700, setup: 3000, judge: 1500, reply: 2500, rewrite: 2500, script: 3000, critic: 3000 };
+
+/** Which model a call uses: everything the user reads on the main model, the small jobs on the fast one. */
+export function modelFor(purpose: ModelRequest["purpose"], main: string, fast: string): string {
+  return FAST_PURPOSES.has(purpose) ? fast : main;
+}
 /**
- * The language model behind the coach: the Anthropic Claude API, one model for every step (D96, D102).
- * Nothing the user types is logged here (D79).
+ * The system prompt as the API takes it. A `cachePrefix` that starts the prompt becomes its own block marked for caching,
+ * so later calls with the same start are billed at the cached rate; the rest follows uncached.
  */
-export function anthropicModel(opts: { apiKey: string; model?: string }): ChatModel {
+export function systemBlocks(req: Pick<ModelRequest, "system" | "cachePrefix">): string | { type: "text"; text: string; cache_control?: { type: "ephemeral" } }[] {
+  const pre = req.cachePrefix;
+  if (!pre || !req.system.startsWith(pre)) return req.system;
+  const rest = req.system.slice(pre.length);
+  return [{ type: "text", text: pre, cache_control: { type: "ephemeral" } }, ...(rest.trim() ? [{ type: "text" as const, text: rest }] : [])];
+}
+/**
+ * The language model behind the coach: the Anthropic Claude API (D102). The main model writes everything the user reads;
+ * a cheaper model does the small jobs (FAST_MODEL). Nothing the user types is logged here (D79).
+ */
+export function anthropicModel(opts: { apiKey: string; model?: string; fastModel?: string }): ChatModel {
   const client = new Anthropic({ apiKey: opts.apiKey, maxRetries: 2, timeout: 60_000 });
-  const model = opts.model ?? DEFAULT_MODEL;
+  const main = opts.model ?? DEFAULT_MODEL, fast = opts.fastModel ?? FAST_MODEL;
   return {
     async complete(req: ModelRequest): Promise<string> {
       const res = await client.messages.create({
-        model, max_tokens: req.purpose === "extract" ? 700 : req.purpose === "script" ? 3000 : req.purpose === "critic" ? 3000 : 2500,
-        system: req.system, messages: normaliseMessages(req.messages),
+        model: modelFor(req.purpose, main, fast), max_tokens: MAX_TOKENS[req.purpose] ?? 2500,
+        system: systemBlocks(req), messages: normaliseMessages(req.messages),
       });
       return res.content.map((b) => (b.type === "text" ? b.text : "")).join("").trim();
     },

@@ -32,7 +32,7 @@ Rules: use only facts the setup states, never invent facts beyond what is needed
 const STAGES: TargetStage[] = ["route", "intake", "position", "market", "numbers", "strategy", "scripts", "brief"];
 export async function interpretSetup(model: ChatModel, c: EvalCase): Promise<Setup> {
   const quoted = c.message ?? null;
-  const reply = await model.complete({ purpose: "script", system: SETUP_SYSTEM, messages: [{ role: "user", content: `Test: ${c.id} ${c.name}\nSetup: ${c.setup || "(none: a fresh session)"}\nInput: ${c.input}${quoted ? `\nExact user message: ${quoted}` : ""}\nThe reply is graded on these must items: ${c.must.join("; ")}` }] });
+  const reply = await model.complete({ purpose: "setup", system: SETUP_SYSTEM, cachePrefix: SETUP_SYSTEM, messages: [{ role: "user", content: `Test: ${c.id} ${c.name}\nSetup: ${c.setup || "(none: a fresh session)"}\nInput: ${c.input}${quoted ? `\nExact user message: ${quoted}` : ""}\nThe reply is graded on these must items: ${c.must.join("; ")}` }] });
   const j = parseJson(reply) ?? {};
   const slots = parseExtraction(JSON.stringify({ slots: j.slots ?? {}, modifiers: [] })).slots;
   const message = quoted ?? (typeof j.message === "string" && j.message.trim() ? j.message.trim() : "Please continue.");
@@ -101,7 +101,7 @@ export async function judgeReply(model: ChatModel, c: EvalCase, setup: Setup, re
   const user = [`Test: ${c.id} ${c.name}`, `Setup: ${c.setup || "(fresh session)"}`, `User message: ${setup.message}`, "", ...(knowledge ? ["Knowledge-base text the coach was given this turn (a detail that appears here is from the knowledge base, not from memory):", knowledge, ""] : []), "Reply to grade:", reply, "", "MUST:", ...c.must.map((m, i) => `${i + 1}. ${m}`), "", "MUST NOT:", ...c.mustNot.map((m, i) => `${i + 1}. ${m}`)].join("\n");
   try {
     let raw = "";
-    const ask = async () => { raw = await model.complete({ purpose: "critic", system: JUDGE_SYSTEM, messages: [{ role: "user", content: user }] }); return parseVerdicts(raw, c.must.length, c.mustNot.length); };
+    const ask = async () => { raw = await model.complete({ purpose: "judge", system: JUDGE_SYSTEM, cachePrefix: JUDGE_SYSTEM, messages: [{ role: "user", content: user }] }); return parseVerdicts(raw, c.must.length, c.mustNot.length); };
     let j: any = await ask();
     for (let k = 0; k < 2 && !j; k++) j = await ask(); // up to two retries when the answer is unreadable or does not line up with the items
     const take = (arr: unknown, items: string[]): Verdict[] | null => Array.isArray(arr) && arr.length === items.length ? items.map((item, i) => ({ item, pass: (arr[i] as any)?.pass === true, reason: String((arr[i] as any)?.reason ?? "").slice(0, 240) })) : null;
