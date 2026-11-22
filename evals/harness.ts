@@ -32,7 +32,7 @@ Rules: use only facts the setup states, never invent facts beyond what is needed
 const STAGES: TargetStage[] = ["route", "intake", "position", "market", "numbers", "strategy", "scripts", "brief"];
 export async function interpretSetup(model: ChatModel, c: EvalCase): Promise<Setup> {
   const quoted = c.message ?? null;
-  const reply = await model.complete({ purpose: "extract", system: SETUP_SYSTEM, messages: [{ role: "user", content: `Test: ${c.id} ${c.name}\nSetup: ${c.setup || "(none: a fresh session)"}\nInput: ${c.input}${quoted ? `\nExact user message: ${quoted}` : ""}\nThe reply is graded on these must items: ${c.must.join("; ")}` }] });
+  const reply = await model.complete({ purpose: "script", system: SETUP_SYSTEM, messages: [{ role: "user", content: `Test: ${c.id} ${c.name}\nSetup: ${c.setup || "(none: a fresh session)"}\nInput: ${c.input}${quoted ? `\nExact user message: ${quoted}` : ""}\nThe reply is graded on these must items: ${c.must.join("; ")}` }] });
   const j = parseJson(reply) ?? {};
   const slots = parseExtraction(JSON.stringify({ slots: j.slots ?? {}, modifiers: [] })).slots;
   const message = quoted ?? (typeof j.message === "string" && j.message.trim() ? j.message.trim() : "Please continue.");
@@ -78,7 +78,7 @@ export function prepareState(setup: Setup): SessionState {
   return s;
 }
 
-export const JUDGE_SYSTEM = `You grade one reply from a salary-negotiation coaching chatbot against a written test case. Be strict and literal. For every "must" item decide whether the reply does it; for every "must not" item decide whether the reply avoids it (pass = avoided). Judge only what the reply text shows. An item that is conditional (it starts with 'if' or contains 'if it was not yet given') passes when its condition does not apply. A short reason of one line per item.
+export const JUDGE_SYSTEM = `You grade one reply from a salary-negotiation coaching chatbot against a written test case. Be strict and literal. For every "must" item decide whether the reply does it; for every "must not" item decide whether the reply avoids it (pass = avoided). Judge only what the reply text shows. An item that is conditional (it starts with 'if' or contains 'if it was not yet given') passes when its condition does not apply. A short reason of one line per item, with no double quote characters inside it (use single quotes).
 Output ONLY one JSON object: {"must":[{"pass":true|false,"reason":"..."}],"must_not":[{"pass":true|false,"reason":"..."}]} with exactly one entry per item, in the order given.`;
 
 export async function judgeReply(model: ChatModel, c: EvalCase, setup: Setup, reply: string): Promise<NonNullable<RunResult["judge"]>> {
@@ -86,7 +86,8 @@ export async function judgeReply(model: ChatModel, c: EvalCase, setup: Setup, re
   try {
     const ask = async () => parseJson(await model.complete({ purpose: "critic", system: JUDGE_SYSTEM, messages: [{ role: "user", content: user }] }));
     let j = await ask();
-    if (!Array.isArray(j?.must) || j.must.length !== c.must.length || !Array.isArray(j?.must_not) || j.must_not.length !== c.mustNot.length) j = await ask(); // one retry when the answer does not line up with the items
+    const lines = (x: any) => Array.isArray(x?.must) && x.must.length === c.must.length && Array.isArray(x?.must_not) && x.must_not.length === c.mustNot.length;
+    for (let k = 0; k < 2 && !lines(j); k++) j = await ask(); // up to two retries when the answer is unreadable or does not line up with the items
     const take = (arr: unknown, items: string[]): Verdict[] | null => Array.isArray(arr) && arr.length === items.length ? items.map((item, i) => ({ item, pass: (arr[i] as any)?.pass === true, reason: String((arr[i] as any)?.reason ?? "").slice(0, 240) })) : null;
     const must = take(j?.must, c.must), mustNot = take(j?.must_not, c.mustNot);
     if (!must || !mustNot) return { ok: false, must: [], mustNot: [], error: `the judge's answer did not match the case: ${JSON.stringify(j ?? null).slice(0, 300)}` };
