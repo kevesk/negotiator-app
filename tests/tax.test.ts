@@ -46,3 +46,18 @@ describe("employer cost", () => {
     expect(employerCost(30000, { today: "2026-11-21" }).reducedApplied).toBe(false);
   });
 });
+
+describe("net pay margin (D109)", () => {
+  it("every net estimate carries the net one table either side", async () => {
+    const { netEstimate } = await import("@/engine/tax");
+    const r = netEstimate(50000, { municipality: "Stockholm" });
+    expect(r.netRange.low).toBeLessThan(r.net); expect(r.netRange.high).toBeGreaterThan(r.net);
+    expect(r.net - r.netRange.low).toBeGreaterThan(200); expect(r.net - r.netRange.low).toBeLessThan(1000); // about 1% of gross
+  });
+  it("works on the national average too, and never leaves the published tables 29 to 42", async () => {
+    const { netEstimate, TAX_2026 } = await import("@/engine/tax");
+    const r = netEstimate(30000); expect(r.rateBasis).toBe("national_average"); expect(r.netRange.low).toBeLessThanOrEqual(r.net);
+    const edge = { ...TAX_2026, params: { ...TAX_2026.params, national_average_rate: 29.1 } };
+    const e = netEstimate(30000, {}, edge); expect(e.table).toBe(29); expect(e.netRange.high).toBe(e.net); // no table 28: the range stops at the edge
+  });
+});
