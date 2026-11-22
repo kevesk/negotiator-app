@@ -780,7 +780,7 @@
    "input": "\"The contract has a non-compete clause for 12 months.\"",
    "message": "The contract has a non-compete clause for 12 months.",
    "must": [
-    "asks what it restricts, for how long, whether there is compensation and whether a penalty applies",
+    "asks for whichever of these the user has not given: what it restricts, for how long, whether there is compensation, whether a penalty applies",
     "says it cannot judge validity and suggests the union or a lawyer",
     "treats it as a term to negotiate"
    ],

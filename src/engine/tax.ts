@@ -19,7 +19,7 @@ const normName = (s: string) => s.trim().toLocaleUpperCase("sv-SE");
 /**
  * Picks the table: the municipal rate excluding church fee (municipal + regional + burial fee),
  * rounded to the nearest whole percent. Without a municipality, the national average (estimate).
- * Rounding rule: Skatteverket's text does not spell it out; see Open-Questions.
+ * Rounding rule: Skatteverket's text does not spell it out (D109), so every net estimate also gives the net one table either side.
  */
 export function chooseTable(municipality: string | undefined, d: TaxData = TAX_2026): TableChoice {
   let rate = d.params.national_average_rate, rateBasis: RateBasis = "national_average";
@@ -55,13 +55,19 @@ export function monthlyTax(gross: number, table: number, d: TaxData = TAX_2026):
 export interface NetResult {
   gross: number; tax: number; net: number; table: number; rate: number; rateBasis: RateBasis;
   estimate: true; incomeYear: number; validAsOf: string; staleTaxYear: boolean;
+  /**
+   * Net pay one tax table either side of the chosen one. The table rule (rate rounded to the nearest whole percent, church fee
+   * excluded) is not stated by Skatteverket, and a church fee moves the table, so the estimate carries this margin (D109).
+   */
+  netRange: { low: number; high: number };
 }
 export function netEstimate(gross: number, opts: { municipality?: string; today?: string } = {}, d: TaxData = TAX_2026): NetResult {
   const c = chooseTable(opts.municipality, d);
   const tax = monthlyTax(gross, c.table, d);
   const todayYear = opts.today ? Number(opts.today.slice(0, 4)) : d.meta.income_year;
+  const netAt = (t: number) => Math.floor(gross) - monthlyTax(gross, Math.min(42, Math.max(29, t)), d);
   return {
-    gross, tax, net: Math.floor(gross) - tax, ...c, estimate: true,
+    gross, tax, net: Math.floor(gross) - tax, ...c, estimate: true, netRange: { low: netAt(c.table + 1), high: netAt(c.table - 1) },
     incomeYear: d.meta.income_year, validAsOf: d.params.valid_as_of, staleTaxYear: todayYear > d.meta.income_year,
   };
 }
