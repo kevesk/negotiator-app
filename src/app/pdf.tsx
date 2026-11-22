@@ -2,7 +2,7 @@
 // Built in the browser; nothing is sent anywhere. The library is loaded only when the user taps Save.
 import { blocks, type Block } from "./markdown";
 import { cleanForReader, dealFigures, kr, ASSUMED } from "./reader";
-import { toSummary } from "@/orchestrator/summary";
+import { planMarkdown } from "./plan";
 import type { SessionState } from "@/orchestrator/state";
 import { T, type Lang } from "./ui-text";
 
@@ -41,8 +41,6 @@ export async function makePdf(opts: { lang: Lang; state: SessionState; brief?: s
     dealTitle: { fontFamily: "Helvetica-Bold", fontSize: 10, marginBottom: 8 },
     dealRow: { flexDirection: "row", flexWrap: "wrap", marginTop: 6 }, dealItem: { width: "33%", marginBottom: 4 },
     dealName: { fontFamily: "Helvetica", fontSize: 8, color: C.muted }, dealValue: { fontFamily: "Helvetica-Bold", fontSize: 11 },
-    resume: { marginTop: 18, padding: 10, borderWidth: 1, borderColor: C.line, borderRadius: 4 },
-    mono: { fontFamily: "Courier", fontSize: 7.5, lineHeight: 1.3, color: C.muted },
     foot: { position: "absolute", bottom: 26, left: 52, right: 52, fontFamily: "Helvetica", fontSize: 8, color: C.muted, flexDirection: "row", justifyContent: "space-between" },
   });
   const Rich = ({ text, style }: { text: string; style?: any }) => (
@@ -60,8 +58,9 @@ export async function makePdf(opts: { lang: Lang; state: SessionState; brief?: s
   const known = marks.filter(([, v]) => v !== undefined);
   const nums = [f.walkAway, f.target, f.firstOffer, f.low, f.high].filter((v): v is number => typeof v === "number");
   const lo = nums.length ? Math.min(...nums) * 0.95 : 0, hi = nums.length ? Math.max(...nums) * 1.05 : 1; const X = (v: number) => 10 + ((v - lo) / Math.max(1, hi - lo)) * 440; // inside a 460 pt wide drawing
-  const body = blocks(cleanForReader(opts.brief ?? "", opts.lang)).filter((b, i) => !(i === 0 && b.t === "h" && b.level === 1));
-  const title = opts.brief ? (opts.brief.match(/^#\s+(.+)$/m)?.[1]?.replace(/\*\*/g, "") ?? t.pdf.title) : t.pdf.summaryTitle;
+  // plain language only: the plan built from the session, then the coach's brief when there is one; never the session data
+  const body = blocks(cleanForReader(planMarkdown(opts.state, opts.lang, opts.brief), opts.lang));
+  const title = opts.brief ? t.pdf.title : t.pdf.summaryTitle;
   const date = new Date().toLocaleDateString(opts.lang === "sv" ? "sv-SE" : "en-GB", { year: "numeric", month: "long", day: "numeric" });
 
   const doc = (
@@ -86,10 +85,6 @@ export async function makePdf(opts: { lang: Lang; state: SessionState; brief?: s
           </View>
         )}
         {body.map(render)}
-        <View style={s.resume} wrap={false}>
-          <Text style={[s.dealName, { marginBottom: 4 }]}>{t.pdf.resume}</Text>
-          <Text style={s.mono}>{toSummary(opts.state)}</Text>
-        </View>
         <View style={s.foot} fixed><Text>{t.pdf.made}. {t.disclaimer}</Text><Text render={({ pageNumber, totalPages }) => `${pageNumber} / ${totalPages}`} /></View>
       </Page>
     </Document>

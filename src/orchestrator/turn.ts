@@ -7,7 +7,7 @@ import type { Stage } from "@/retrieval/types";
 import { extractSlots, applyExtraction, type Extraction } from "./extract";
 import { fromSummary } from "./summary";
 import { runNumbersTool, type MarketRange } from "./tools";
-import { buildPackages, weightsFromSlot, type MesoResult } from "@/engine";
+import { buildPackages, weightsFromSlot, draftConcessionPlan } from "@/engine";
 import { runOfferTool } from "./offer";
 import { runScriptTool } from "./scripts";
 import { reviewBrief, FINDING_LABEL, type CriticReport } from "@/agents/critic";
@@ -112,6 +112,9 @@ export async function runTurn(deps: TurnDeps, prev: SessionState, message: strin
   }
   plan = workPlan(s);
   s.stage = plan.stage;
+  // the three concession steps from the user's own first offer, for the saved plan (the engine's plan is drawn for the default anchor)
+  { const f = num(slotValue(s, "first_offer")), t = num(slotValue(s, "own_target")), w = num(slotValue(s, "walk_away"));
+    if (f !== undefined && t !== undefined && w !== undefined && f > t && t >= w) s.outputs.concession_plan = { first: f, ...draftConcessionPlan(f, t, w) }; else delete s.outputs.concession_plan; }
 
   // 5. retrieve notes for the stage and active modifiers
   const query = [message, STAGE_GOAL[plan.stage], plan.ask.join(" ")].join(" ");

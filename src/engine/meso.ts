@@ -30,13 +30,15 @@ export interface MesoIssue { id: string; label: string; weight: number }
 export interface MesoItem { issue: string; label: string; level: Level; text: string; theme: Theme; cost: Cost }
 export interface MesoPackage {
   id: string; /** "cash", "time" or "growth": what this package leans on most. */ lean: Theme; items: MesoItem[]; score: number;
-  /** What it costs the employer, in words: cash now, little cash, or paid later. */ employerCost: Cost;
+  /** Relative cost to the employer: "budget" takes the most cash now, "low" the least, "later" is in between. */ employerCost: Cost;
   /** What the employer choosing this package tells the user. */ shows: string;
 }
 export interface MesoResult {
   packages: MesoPackage[]; issues: MesoIssue[]; spread: number;
   /** Ranking from the scoring engine; the packages share one group when they are worth about the same. */
   sameValue: boolean; basis: string; notes: string[];
+  /** The middle version of each item besides base pay, most important first: realistic things to ask for in return for a concession. */
+  trades: string[];
 }
 const round500 = (n: number) => Math.round(n / 500) * 500;
 const fmt = (n: number) => Math.round(n).toLocaleString("en-US").replace(/,/g, " ");
@@ -126,18 +128,29 @@ export function buildPackages(inp: MesoInput): MesoResult | { needs: string[] } 
   };
   const meta = (i: number) => cat[i] ?? { ...GENERIC(issues[i]!.label), label: { en: issues[i]!.label, sv: issues[i]!.label } };
   const lean = (c: number[]): Theme => { const by: Record<Theme, number> = { cash: 0, time: 0, growth: 0 }; c.forEach((l, i) => { by[meta(i).theme] += (issues[i]!.weight * rating(l)) / 100; }); return (Object.keys(by) as Theme[]).sort((a, b) => by[b] - by[a])[0]!; };
-  const costOf = (c: number[]): Cost => { const b = c.reduce((a, l, i) => a + (meta(i).cost === "budget" ? l : 0), 0), later = c.reduce((a, l, i) => a + (meta(i).cost === "later" ? l : 0), 0); return b >= 2 * Math.max(1, later) ? "budget" : b >= 1 ? (later > b ? "later" : "budget") : "low"; };
   const SHOWS: Record<Theme, { en: string; sv: string }> = {
     cash: { en: "Choosing this suggests the budget has room now and they would rather pay than change how you work.", sv: "Väljer de detta har de utrymme i budgeten nu och betalar hellre än ändrar hur du arbetar." },
     time: { en: "Choosing this suggests pay is tight but they can be flexible about time and place.", sv: "Väljer de detta är lönen snäv men de kan vara flexibla med tid och plats." },
     growth: { en: "Choosing this suggests they prefer to promise growth or a later raise over paying more now.", sv: "Väljer de detta föredrar de att lova utveckling eller en senare höjning framför att betala mer nu." },
   };
   const letters = ["A", "B", "C"];
-  const packages: MesoPackage[] = best.set
-    .map((c) => ({ c, s: score(c) }))
-    .map(({ c, s }, k) => ({ id: letters[k]!, lean: lean(c), items: c.map((l, i) => ({ issue: issues[i]!.id, label: meta(i).label[lang], level: l as Level, text: textFor(i, l), theme: meta(i).theme, cost: meta(i).cost })), score: Math.round(s * 10) / 10, employerCost: costOf(c), shows: SHOWS[lean(c)][lang] }));
-  // each package gets a different lean where the data allows, so the three describe three different choices for the employer
-  const seen = new Set<Theme>(); for (const p of packages) { if (seen.has(p.lean)) p.shows = lang === "sv" ? "Väljer de detta visar det vad de värderar mest av det som skiljer paketen åt." : "Choosing this shows which of the differences between the packages they value most."; seen.add(p.lean); }
+  // lean: the kind of item each package is strongest on compared with the other packages (not in absolute terms, where base pay always wins)
+  const themeScore = (c: number[], th: Theme) => c.reduce((a, l, i) => a + (meta(i).theme === th ? (issues[i]!.weight * rating(l)) / 100 : 0), 0);
+  const present = (["cash", "time", "growth"] as Theme[]).filter((th) => issues.some((_, i) => meta(i).theme === th));
+  const rel = best.set.map((c) => Object.fromEntries(present.map((th) => [th, themeScore(c, th) - best!.set.reduce((a, o) => a + themeScore(o, th), 0) / best!.set.length])) as Record<Theme, number>);
+  const leans: (Theme | undefined)[] = best.set.map(() => undefined); const used = new Set<Theme>();
+  for (const [k, th] of best.set.flatMap((_, k) => present.map((th) => [k, th] as const)).sort((a, b) => rel[b[0]]![b[1]] - rel[a[0]]![a[1]])) {
+    if (leans[k] || used.has(th) || rel[k]![th] <= 0) continue; leans[k] = th; used.add(th);
+  }
+  // cost to the employer, relative: which package takes the most cash now (base pay and pension), which the least
+  const cashNow = (c: number[]) => c.reduce((a, l, i) => a + (meta(i).cost === "budget" ? l * (cat[i]?.id === "base" ? 3 : 1) : meta(i).cost === "later" ? l * 0.3 : 0), 0);
+  const cash = best.set.map(cashNow); const hi = Math.max(...cash), lo = Math.min(...cash);
+  const costOf = (k: number): Cost => (hi === lo ? "later" : cash[k] === hi ? "budget" : cash[k] === lo ? "low" : "later");
+  const GENERIC_SHOWS = { en: "Choosing this shows which of the differences between the packages they value most.", sv: "Väljer de detta visar det vad de värderar mest av det som skiljer paketen åt." };
+  const packages: MesoPackage[] = best.set.map((c, k) => ({
+    id: letters[k]!, lean: leans[k] ?? lean(c), items: c.map((l, i) => ({ issue: issues[i]!.id, label: meta(i).label[lang], level: l as Level, text: textFor(i, l), theme: meta(i).theme, cost: meta(i).cost })),
+    score: Math.round(score(c) * 10) / 10, employerCost: costOf(k), shows: leans[k] ? SHOWS[leans[k]!][lang] : GENERIC_SHOWS[lang],
+  }));
   // the scoring engine confirms the packages are worth about the same to the user
   const sc = scorePackages(issues.map((is): Issue => ({ id: is.id, weight: is.weight, kind: "rated" })), best.set.map((c, k): Pkg => ({ id: letters[k]!, values: Object.fromEntries(c.map((l, i) => [issues[i]!.id, rating(l)])) })));
   const sameValue = sc.ranking.length === best.set.length && new Set(sc.ranking.map((r) => r.tieGroup)).size === 1;
@@ -145,6 +158,7 @@ export function buildPackages(inp: MesoInput): MesoResult | { needs: string[] } 
   return {
     packages, issues, spread: Math.round((Math.max(...scores) - Math.min(...scores)) * 10) / 10, sameValue,
     basis: haveBase ? `base salary levels run from ${fmt(inp.walkAway!)} (walk-away, rating 0) to ${fmt(inp.target!)} (target, rating 100)` : "no base salary levels: salary was not one of the items or the target and walk-away are missing",
+    trades: issues.map((is, i) => ({ is, c: cat[i] })).filter((x) => x.c && x.c.id !== "base").sort((a, b) => b.is.weight - a.is.weight).map((x) => x.c!.levels[lang][1]),
     notes: [lang === "sv" ? "Nivåerna är förslag att justera efter vad arbetsgivaren faktiskt kan erbjuda." : "The levels are proposals; adjust them to what this employer can actually offer."],
   };
 }
