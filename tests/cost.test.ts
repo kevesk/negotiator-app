@@ -5,8 +5,8 @@ import { newState, setSlot } from "@/orchestrator/state";
 import type { ChatModel, ModelRequest } from "@/orchestrator/model";
 
 describe("which model does what", () => {
-  it("the small jobs (and the script draft, which the coach rewrites for the reader) use the fast model", () => { for (const p of ["extract", "setup", "judge", "script"] as const) expect(modelFor(p, DEFAULT_MODEL, FAST_MODEL)).toBe(FAST_MODEL); });
-  it("everything the user reads uses the main model", () => { for (const p of ["reply", "rewrite", "critic"] as const) expect(modelFor(p, DEFAULT_MODEL, FAST_MODEL)).toBe(DEFAULT_MODEL); });
+  it("the small jobs (and the script draft, which the coach rewrites for the reader) use the fast model", () => { for (const p of ["extract", "setup", "judge", "script", "critic"] as const) expect(modelFor(p, DEFAULT_MODEL, FAST_MODEL)).toBe(FAST_MODEL); });
+  it("everything the user reads uses the main model", () => { for (const p of ["reply", "rewrite"] as const) expect(modelFor(p, DEFAULT_MODEL, FAST_MODEL)).toBe(DEFAULT_MODEL); });
 });
 
 describe("prompt caching", () => {
