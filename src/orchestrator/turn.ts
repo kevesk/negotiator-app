@@ -107,9 +107,11 @@ export async function runTurn(deps: TurnDeps, prev: SessionState, message: strin
     if (!("needs" in r)) { s.outputs.offer_analysis = r; setSlot(s, "total_comp_offer", { cash_subtotal: r.cash_subtotal, parts: r.parts.length }, "computed"); if (r.offers_comparison) setSlot(s, "offer_comparison", { columns: r.offers_comparison.columns }, "computed"); }
   } else if (tool === "script_writer" && !deps.tools?.script_writer) {
     s.outputs.scripts = await runScriptTool(s, deps.model, deps.today, deps.allowDraft ?? true);
+    s.outputs.scripts_built_at = s.turn; // the turn that writes the scripts shows them; the brief comes on the next turn
   } else if (tool) {
     const run = deps.tools?.[tool]; const key = tool === "script_writer" ? "scripts" : tool === "offer_analyzer" ? "offer_analysis" : "evidence_summary";
     s.outputs[key] = run ? await run(s).catch(() => ({ failed: true })) : { notBuilt: true };
+    if (tool === "script_writer") s.outputs.scripts_built_at = s.turn;
   }
   plan = workPlan(s);
   s.stage = plan.stage;

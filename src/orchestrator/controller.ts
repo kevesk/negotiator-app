@@ -71,6 +71,8 @@ export function workPlan(s: SessionState): WorkPlan {
     if (stage === "strategy" && packagesNeedBuilding(s)) return { stage, ask: [], missing: [], runTool: "package_builder" };
     // the turn that builds the packages is the turn that shows them; the next step starts after the user has seen them
     if (stage === "strategy" && (s.outputs.package_draft as { builtAt?: number; failed?: boolean } | undefined)?.builtAt === s.turn && !(s.outputs.package_draft as { failed?: boolean }).failed) return { stage, ask: [], missing: [] };
+    // the same for the scripts: writing them and writing the brief in one request passed the server's time limit (live bug, channel "phone")
+    if (stage === "scripts" && "scripts" in s.outputs && s.outputs.scripts_built_at === s.turn) return { stage, ask: [], missing: [] };
     // the user's own view (BATNA, target, walk-away) comes before any market figure
     if (g.met && def(stage).asks_first && !(STAGE_OUTPUT[stage]! in s.outputs)) missing = (def(stage).asks_first as string[]).filter((id) => !isSet(s, id));
     if (missing.length) {
